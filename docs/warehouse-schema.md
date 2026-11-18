@@ -1,6 +1,6 @@
 # Warehouse star schema
 
-The warehouse service owns 16 PostgreSQL tables in the default schema. The table layers establish boundaries for raw ingestion, conformed dimensions, dimensional facts, and analytics outputs. Alembic revision `0001` creates the schema without seeding data. Revision `0002` adds run outcomes and supports raw snapshots from providers that omit individual issue times. See the [ingestion guide](ingestion.md) for those snapshots.
+The warehouse service owns 16 schema tables and two historical pipeline metadata tables in the default schema. The table layers establish boundaries for raw ingestion, conformed dimensions, dimensional facts, and analytics outputs. Alembic revision `0001` creates the schema without seeding data. Revision `0002` adds run outcomes and supports raw snapshots from providers that omit individual issue times. See the [ingestion guide](ingestion.md) for those snapshots. Revision `0003` adds run/checkpoint tracking and aggregate views. See the [historical ETL guide](historical-etl.md) for its data and processing contracts.
 
 ## Table grains and replay keys
 

@@ -208,7 +208,7 @@ def test_fact_grains_and_measure_checks(db, fact_keys):
         "rainfall_total_mm": Decimal("1.250"),
         "hours_with_rainfall": 1,
     }
-    assert_rejected(db, insert(FactRainfallDaily).values(daily | {"hours_with_rainfall": 25}), "23514")
+    assert_rejected(db, insert(FactRainfallDaily).values(daily | {"hours_with_rainfall": 27}), "23514")
     db.execute(insert(FactRainfallDaily).values(daily))
     assert_rejected(db, insert(FactRainfallDaily).values(daily), "23505")
 

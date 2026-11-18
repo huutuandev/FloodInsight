@@ -70,8 +70,13 @@ services:
       - ./services/warehouse-service/migrations:/app/migrations:ro
     environment:
       FLOODINSIGHT_WAREHOUSE_ENVIRONMENT: ${FLOODINSIGHT_WAREHOUSE_ENVIRONMENT:-development}
+      FLOODINSIGHT_WAREHOUSE_ARCHIVE_URL: ${FLOODINSIGHT_WAREHOUSE_ARCHIVE_URL:-https://archive-api.open-meteo.com/v1/archive}
+      FLOODINSIGHT_WAREHOUSE_ARCHIVE_ATTEMPTS: ${FLOODINSIGHT_WAREHOUSE_ARCHIVE_ATTEMPTS:-3}
+      FLOODINSIGHT_WAREHOUSE_ARCHIVE_TIMEOUT_SECONDS: ${FLOODINSIGHT_WAREHOUSE_ARCHIVE_TIMEOUT_SECONDS:-30}
       <<: *postgres-environment
       POSTGRES_HOST: postgres
+    ports:
+      - "127.0.0.1:${WAREHOUSE_PORT:-8002}:8000"
     depends_on:
       warehouse-migrate:
         condition: service_completed_successfully

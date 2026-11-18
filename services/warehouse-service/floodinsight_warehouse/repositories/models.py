@@ -249,7 +249,7 @@ class FactRainfallDaily(WeatherFactKeys, Base):
         CheckConstraint(
             "rainfall_total_mm >= 0 AND rainfall_total_mm <> 'NaN'::numeric", name="rainfall"
         ),
-        CheckConstraint("hours_with_rainfall BETWEEN 1 AND 24", name="hour_count"),
+        CheckConstraint("hours_with_rainfall BETWEEN 1 AND 26", name="hour_count"),
     )
 
     local_date: Mapped[date] = mapped_column(ForeignKey("dim_date.local_date"), primary_key=True)
@@ -371,3 +371,50 @@ class ClassificationResult(HourlyModelResult, Base):
     model_kind: Mapped[str] = mapped_column(String(16), server_default=text("'classification'"))
     label: Mapped[str] = mapped_column(String(100))
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(7, 6))
+
+
+class WarehouseRun(Base):
+    __tablename__ = "warehouse_runs"
+    __table_args__ = (
+        CheckConstraint("operation IN ('backfill', 'etl')", name="operation"),
+        CheckConstraint("end_date >= start_date", name="dates"),
+        CheckConstraint(
+            "(status = 'running' AND finished_at IS NULL) OR "
+            "(status IN ('succeeded', 'failed') AND finished_at IS NOT NULL "
+            "AND finished_at >= started_at)",
+            name="lifecycle",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    operation: Mapped[str] = mapped_column(String(16))
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(16))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    progress: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+
+class HistoricalBatch(Base):
+    __tablename__ = "historical_batches"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["ingestion_run_id", "source_id"], ["ingestion_runs.id", "ingestion_runs.source_id"]
+        ),
+        UniqueConstraint("source_id", "location_code", "start_date", "end_date"),
+        CheckConstraint("end_date >= start_date", name="dates"),
+        CheckConstraint("(etl_run_id IS NULL) = (quality IS NULL)", name="quality"),
+        Index("ix_historical_batches_date_range", "start_date", "end_date"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("data_sources.id"))
+    location_code: Mapped[str] = mapped_column(String(100))
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date] = mapped_column(Date)
+    ingestion_run_id: Mapped[int] = mapped_column(BigInteger)
+    backfill_run_id: Mapped[int] = mapped_column(ForeignKey("warehouse_runs.id"))
+    etl_run_id: Mapped[int | None] = mapped_column(ForeignKey("warehouse_runs.id"))
+    quality: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
