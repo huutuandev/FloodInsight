@@ -1,0 +1,146 @@
+name: floodinsight
+
+x-runtime: &runtime
+  networks: [floodinsight-internal]
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-python-service: &python-service
+  <<: *runtime
+  configs:
+    - source: python-logging
+      target: /etc/floodinsight/logging.json
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).close()"]
+    interval: 5s
+    timeout: 3s
+    retries: 10
+    start_period: 10s
+
+x-postgres-environment: &postgres-environment
+  POSTGRES_DB: ${POSTGRES_DB:-floodinsight}
+  POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+
+services:
+  ingestion-service:
+    <<: *python-service
+    build: ./services/ingestion-service
+    command: ["python", "-m", "uvicorn", "floodinsight_ingestion.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/floodinsight_ingestion", "--log-config", "/etc/floodinsight/logging.json"]
+    volumes:
+      - ./services/ingestion-service/floodinsight_ingestion:/app/floodinsight_ingestion:ro
+    environment:
+      FLOODINSIGHT_INGESTION_ENVIRONMENT: ${FLOODINSIGHT_INGESTION_ENVIRONMENT:-development}
+
+  warehouse-service:
+    <<: *python-service
+    build: ./services/warehouse-service
+    command: ["python", "-m", "uvicorn", "floodinsight_warehouse.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/floodinsight_warehouse", "--log-config", "/etc/floodinsight/logging.json"]
+    volumes:
+      - ./services/warehouse-service/floodinsight_warehouse:/app/floodinsight_warehouse:ro
+      - ./services/warehouse-service/migrations:/app/migrations:ro
+    environment:
+      FLOODINSIGHT_WAREHOUSE_ENVIRONMENT: ${FLOODINSIGHT_WAREHOUSE_ENVIRONMENT:-development}
+      <<: *postgres-environment
+      POSTGRES_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  analysis-service:
+    <<: *python-service
+    build: ./services/analysis-service
+    command: ["python", "-m", "uvicorn", "floodinsight_analysis.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/floodinsight_analysis", "--log-config", "/etc/floodinsight/logging.json"]
+    volumes:
+      - ./services/analysis-service/floodinsight_analysis:/app/floodinsight_analysis:ro
+    environment:
+      FLOODINSIGHT_ANALYSIS_ENVIRONMENT: ${FLOODINSIGHT_ANALYSIS_ENVIRONMENT:-development}
+
+  clustering-service:
+    <<: *python-service
+    build: ./services/clustering-service
+    command: ["python", "-m", "uvicorn", "floodinsight_clustering.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/floodinsight_clustering", "--log-config", "/etc/floodinsight/logging.json"]
+    volumes:
+      - ./services/clustering-service/floodinsight_clustering:/app/floodinsight_clustering:ro
+    environment:
+      FLOODINSIGHT_CLUSTERING_ENVIRONMENT: ${FLOODINSIGHT_CLUSTERING_ENVIRONMENT:-development}
+
+  prediction-service:
+    <<: *python-service
+    build: ./services/prediction-service
+    command: ["python", "-m", "uvicorn", "floodinsight_prediction.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/floodinsight_prediction", "--log-config", "/etc/floodinsight/logging.json"]
+    volumes:
+      - ./services/prediction-service/floodinsight_prediction:/app/floodinsight_prediction:ro
+    environment:
+      FLOODINSIGHT_PREDICTION_ENVIRONMENT: ${FLOODINSIGHT_PREDICTION_ENVIRONMENT:-development}
+
+  classification-service:
+    <<: *python-service
+    build: ./services/classification-service
+    command: ["python", "-m", "uvicorn", "floodinsight_classification.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/floodinsight_classification", "--log-config", "/etc/floodinsight/logging.json"]
+    volumes:
+      - ./services/classification-service/floodinsight_classification:/app/floodinsight_classification:ro
+    environment:
+      FLOODINSIGHT_CLASSIFICATION_ENVIRONMENT: ${FLOODINSIGHT_CLASSIFICATION_ENVIRONMENT:-development}
+
+  api-service:
+    <<: *python-service
+    build: ./services/api-service
+    command: ["python", "-m", "uvicorn", "floodinsight_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/floodinsight_api", "--log-config", "/etc/floodinsight/logging.json"]
+    volumes:
+      - ./services/api-service/floodinsight_api:/app/floodinsight_api:ro
+    environment:
+      FLOODINSIGHT_API_ENVIRONMENT: ${FLOODINSIGHT_API_ENVIRONMENT:-development}
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+
+  frontend:
+    <<: *runtime
+    build:
+      context: ./frontend
+      target: development
+    environment:
+      FLOODINSIGHT_API_URL: http://api-service:8000
+      WATCHPACK_POLLING: "1000"
+    volumes:
+      - ./frontend/app:/app/app:ro
+    depends_on:
+      api-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(response => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 4s
+      retries: 10
+      start_period: 20s
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+
+  postgres:
+    <<: *runtime
+    image: postgres:16
+    environment: *postgres-environment
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - PGPASSWORD="$$POSTGRES_PASSWORD" psql -w -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -tAc 'SELECT 1' >/dev/null
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 15s
+
+configs:
+  python-logging:
+    file: ./config/python-logging.json
+
+networks:
+  floodinsight-internal:
+    driver: bridge
+
+volumes:
+  postgres-data:
