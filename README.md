@@ -29,7 +29,7 @@ Each Python service has an independently buildable Docker image, runtime and tes
 | --- | --- |
 | ingestion-service | Fetch and validate Open-Meteo model snapshots and record scheduled and manual runs. |
 | warehouse-service | Backfill Open-Meteo ERA5, run historical ETL, expose data quality, and own warehouse migrations. |
-| analysis-service | Compute rainfall time series, aggregations, and descriptive statistics with Pandas and NumPy. |
+| analysis-service | Generate and regenerate time-series patterns from warehouse data with Pandas and NumPy. |
 | clustering-service | Group observations or locations using scikit-learn. |
 | prediction-service | Train and evaluate rainfall regression models and serve forecasts. |
 | classification-service | Train and evaluate models for documented rainfall categories. |
@@ -39,7 +39,7 @@ Each Python service has an independently buildable Docker image, runtime and tes
 
 Planned flow is from weather providers through ingestion into the warehouse. Analytics and ML services consume warehouse data through contracts to be defined. The API exposes results to the dashboard. The ML services have Joblib available for model persistence. The ingestion service captures Open-Meteo modeled weather snapshots. The warehouse backfills ERA5 historical reanalysis. Charts, maps, and analytics data contracts are future work.
 
-Each Python service exposes `GET /health` as a liveness check. The warehouse migration job runs after PostgreSQL can execute an authenticated query. Ingestion and the warehouse API start after migrations succeed. The frontend starts after the public API passes its health check. Services share the project-scoped `floodinsight-internal` bridge network. The warehouse connects to `postgres:5432`, and the frontend forwards `/api/health` to `api-service:8000`. The frontend, public API, ingestion API, and warehouse API publish ports on the host loopback interface.
+Each Python service exposes `GET /health` as a liveness check. The warehouse migration job runs after PostgreSQL can execute an authenticated query. Ingestion and the warehouse API start after migrations succeed. The frontend starts after the public API passes its health check. Services share the project-scoped `floodinsight-internal` bridge network. The warehouse connects to `postgres:5432`, and the frontend forwards `/api/health` to `api-service:8000`. The frontend, public API, ingestion API, warehouse API, and analysis API publish ports on the host loopback interface.
 
 ## Docker development
 
@@ -69,6 +69,8 @@ PostgreSQL data persists in the named `postgres-data` volume after `docker compo
 The [Open-Meteo ingestion guide](docs/ingestion.md) documents sampling points, scheduling, timestamp semantics, and the ingestion REST API on `localhost:8001`.
 
 The [historical ETL guide](docs/historical-etl.md) documents checkpointed archive downloads, aggregation, data quality, and the warehouse REST API on `localhost:8002`.
+
+See the [time-series analysis guide](docs/time-series-analysis.md) for pattern generation, ECharts responses, and demo recovery on `localhost:8003`.
 
 ## Local development and tests
 
