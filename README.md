@@ -37,7 +37,7 @@ Each Python service has an independently buildable Docker image, runtime and tes
 | frontend | Present rainfall analytics and geographic layers with Next.js App Router, Tailwind CSS, Apache ECharts, and React Leaflet. |
 | postgres | Persist warehouse data in PostgreSQL 16 on a named volume. |
 
-Planned flow is from weather providers through ingestion into the warehouse. Analytics and ML services consume warehouse data through contracts to be defined. The API exposes results to the dashboard. The ML services have Joblib available for model persistence. Charts, maps, weather providers, ingestion schedules, service-to-service contracts, and warehouse tables are future work.
+Planned flow is from weather providers through ingestion into the warehouse. Analytics and ML services consume warehouse data through contracts to be defined. The API exposes results to the dashboard. The ML services have Joblib available for model persistence. Charts, maps, weather providers, ingestion schedules, and service-to-service data contracts are future work.
 
 Each Python service exposes `GET /health` as a liveness check. The warehouse starts after PostgreSQL can run an authenticated query, and the frontend starts after the API passes its health check. Services share the project-scoped `floodinsight-internal` bridge network. The warehouse connects to `postgres:5432`, and the frontend forwards `/api/health` to `api-service:8000`. Only the frontend and public API publish ports, both on the host loopback interface.
 
@@ -63,7 +63,7 @@ docker compose down
 
 Python services emit JSON records with timestamp, severity, logger, and message. Docker stores all container output with its rotating JSON log driver. Next.js and PostgreSQL retain their native log message format inside those Docker records.
 
-PostgreSQL data persists in the named `postgres-data` volume after `docker compose down`. PostgreSQL applies the user, password, and database settings when initializing an empty data directory. The Alembic revision directory starts empty. Apply future committed revisions with `docker compose exec warehouse-service alembic upgrade head`.
+PostgreSQL data persists in the named `postgres-data` volume after `docker compose down`. PostgreSQL applies the user, password, and database settings when initializing an empty data directory. Apply the warehouse schema with `docker compose exec warehouse-service alembic upgrade head`. See the [warehouse design and ERD](docs/warehouse-schema.md) for table grains, replay keys, timezone behavior, and verification instructions.
 
 
 ## Local development and tests
@@ -90,6 +90,6 @@ Use `npm run dev` to run the dashboard locally.
 ## Future phases
 
 1. Validate provider coverage, licensing, units, and time zone conventions for Da Nang observations.
-2. Define warehouse granularity, dimensions, migrations, replay-safe ETL, and data quality checks.
+2. Implement replay-safe ETL and data quality checks using the warehouse schema.
 3. Implement time-series aggregation and evaluate clustering, prediction, and classification with chronological validation where applicable.
 4. Define API contracts and connect the dashboard charts and geographic layers to real results.

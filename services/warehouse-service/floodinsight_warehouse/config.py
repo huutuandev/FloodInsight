@@ -26,4 +26,5 @@ class DatabaseSettings(BaseSettings):
             host=self.host,
             port=self.port,
             database=self.db,
+            query={"options": "-c timezone=UTC"},
         )
