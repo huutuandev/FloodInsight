@@ -55,6 +55,9 @@ class IngestionRun(Base):
     __table_args__ = (
         UniqueConstraint("source_id", "run_key"),
         UniqueConstraint("id", "source_id"),
+        CheckConstraint("trigger IN ('manual', 'scheduled')", name="trigger"),
+        CheckConstraint("records_inserted >= 0", name="record_count"),
+        Index("ix_ingestion_runs_source_history", "source_id", "id"),
         CheckConstraint(
             "(status = 'running' AND finished_at IS NULL) OR "
             "(status IN ('succeeded', 'failed') AND finished_at IS NOT NULL "
@@ -69,6 +72,9 @@ class IngestionRun(Base):
     status: Mapped[str] = mapped_column(String(16), server_default=text("'running'"))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    trigger: Mapped[str | None] = mapped_column(String(16))
+    records_inserted: Mapped[int | None] = mapped_column(Integer)
+    error_message: Mapped[str | None] = mapped_column(Text)
 
 
 class RawWeatherRecord:
@@ -102,14 +108,30 @@ class RawWeatherForecast(RawWeatherRecord, Base):
         ),
         UniqueConstraint("source_id", "source_location_key", "valid_at", "issued_at"),
         Index("ix_raw_weather_forecasts_run", "ingestion_run_id", "source_id"),
+        Index(
+            "uq_raw_weather_forecasts_snapshot",
+            "source_id", "source_location_key", "valid_at", "snapshot_hash",
+            unique=True,
+            postgresql_where=text("snapshot_hash IS NOT NULL"),
+        ),
+        Index(
+            "ix_raw_weather_forecasts_current",
+            "source_id", "source_location_key", "valid_at", "received_at",
+            postgresql_where=text("payload ->> 'kind' = 'current'"),
+        ),
         CheckConstraint(
-            "isfinite(valid_at) AND isfinite(issued_at) AND issued_at <= valid_at",
-            name="forecast_instants",
+            "isfinite(valid_at) AND ("
+            "(issued_at IS NOT NULL AND isfinite(issued_at) AND issued_at <= valid_at "
+            "AND snapshot_hash IS NULL) OR "
+            "(issued_at IS NULL AND snapshot_hash IS NOT NULL "
+            "AND snapshot_hash ~ '^[0-9a-f]{64}$'))",
+            name="snapshot_or_issue",
         ),
         CheckConstraint("jsonb_typeof(payload) = 'object'", name="payload_object"),
     )
 
-    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    snapshot_hash: Mapped[str | None] = mapped_column(String(64))
 
 
 class DimDate(Base):

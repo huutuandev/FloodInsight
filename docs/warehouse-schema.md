@@ -1,6 +1,6 @@
 # Warehouse star schema
 
-The warehouse service owns 16 PostgreSQL tables in the default schema. The table layers establish boundaries for raw ingestion, conformed dimensions, dimensional facts, and analytics outputs. Alembic revision `0001` creates the schema without seeding data.
+The warehouse service owns 16 PostgreSQL tables in the default schema. The table layers establish boundaries for raw ingestion, conformed dimensions, dimensional facts, and analytics outputs. Alembic revision `0001` creates the schema without seeding data. Revision `0002` adds run outcomes and supports raw snapshots from providers that omit individual issue times. See the [ingestion guide](ingestion.md) for those snapshots.
 
 ## Table grains and replay keys
 
@@ -11,7 +11,7 @@ The replay keys are unique constraints or primary keys. Fact keys are also forei
 | Raw · `data_sources` | Provider dataset or independently keyed feed | `code` |
 | Raw · `ingestion_runs` | Logical collection run for a feed | `source_id, run_key` |
 | Raw · `raw_weather_observations` | Provider payload for a station or grid cell and an observation instant | `source_id, source_location_key, valid_at` |
-| Raw · `raw_weather_forecasts` | Provider payload for a station or grid cell, valid instant, and issuance | Observation key plus `issued_at` |
+| Raw · `raw_weather_forecasts` | Provider payload for a station or grid cell, valid instant, and issuance | Observation key plus `issued_at` for issued runs, or plus `snapshot_hash` for unissued snapshots |
 | Dimension · `dim_date` | Vietnam local calendar date | `local_date` |
 | Dimension · `dim_time` | UTC hour with its generated Vietnam date and hour-of-day | `hour_start_utc` |
 | Dimension · `dim_location` | Canonical station, grid cell, or other point mapped by the loader | `code` |
@@ -31,7 +31,7 @@ The replay keys are unique constraints or primary keys. Fact keys are also forei
 - Populate `dim_date` before `dim_time`. PostgreSQL computes the local date and hour from the UTC instant. Aggregate daily observations by joining hourly observations to `dim_time` and grouping by location, source, and `dim_time.local_date`. The local day runs from inclusive local midnight to exclusive following midnight. For contemporary Vietnamese dates, midnight occurs at 17:00 UTC on the previous calendar date.
 - Hourly rainfall represents millimetres in the hour starting at `hour_start_utc`. Convert rates and cumulative forecasts to interval amounts before loading. Other units are degrees Celsius, percent relative humidity, and metres per second. A missing hourly value is NULL. Measured zero is retained as a value. `hours_with_rainfall` counts hours with a non-NULL measurement, including zero. Sum only those values, omit daily rows with no measurements, and expose coverage when a day is partial. Daily totals and coverage must be recomputed together when hourly data changes. The loader owns this cross-table aggregation invariant.
 - For a replay, reuse the same feed code, station or grid key, and logical run key. An observation that arrives in multiple runs still has one raw row. Insert exact raw replays with `ON CONFLICT DO NOTHING` on the natural key. If a provider corrects a payload at the same key, the loader must choose an explicit correction policy. Resolve dimension keys before using `ON CONFLICT DO UPDATE` to replace changed canonical fact measures and recomputed daily totals in a transaction. Facts retain the source dimension link. Raw rows retain their ingestion run; hourly facts can be derived from multiple raw records and have no single raw-record pointer.
-- Use stable station and grid identifiers within a feed. Treat independent ensemble members or products as distinct feeds if they would otherwise share a source, location, valid time, and issue time. Forecasts for the same target remain distinct by issuance, and forecast issue times cannot follow their targets. Provider forecasts and internal model predictions have separate tables.
+- Use stable station and grid identifiers within a feed. Treat independent ensemble members or products as distinct feeds if they would otherwise share a source, location, valid time, and issue time. Forecasts with a known issue time remain distinct by issuance, and their issue times cannot follow their targets. Unissued raw snapshots use a content digest. They retain provider valid time and retrieval time, with NULL issue time. Provider forecasts and internal model predictions have separate tables.
 - Fact primary keys support time ranges for a location/source pair. Date/hour indexes support regional time slices, and the forecast hour index includes the issue time for issue filtering. Raw run indexes support lineage lookups. Result indexes support location and target/window lookups. JSONB is used for provider payloads and analysis output, with object-shape checks.
 
 The following query produces the daily fact grain from observations. Apply the intended date and location filters when using it for incremental loads.
@@ -108,6 +108,7 @@ erDiagram
         string source_location_key
         timestamptz valid_at
         timestamptz issued_at
+        string snapshot_hash
         jsonb payload
     }
     DIM_LOCATION {

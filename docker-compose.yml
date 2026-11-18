@@ -34,6 +34,32 @@ services:
       - ./services/ingestion-service/floodinsight_ingestion:/app/floodinsight_ingestion:ro
     environment:
       FLOODINSIGHT_INGESTION_ENVIRONMENT: ${FLOODINSIGHT_INGESTION_ENVIRONMENT:-development}
+      FLOODINSIGHT_INGESTION_OPEN_METEO_URL: ${FLOODINSIGHT_INGESTION_OPEN_METEO_URL:-https://api.open-meteo.com/v1/forecast}
+      FLOODINSIGHT_INGESTION_SCHEDULER_ENABLED: ${FLOODINSIGHT_INGESTION_SCHEDULER_ENABLED:-true}
+      FLOODINSIGHT_INGESTION_INTERVAL_SECONDS: ${FLOODINSIGHT_INGESTION_INTERVAL_SECONDS:-300}
+      FLOODINSIGHT_INGESTION_TIMEOUT_SECONDS: ${FLOODINSIGHT_INGESTION_TIMEOUT_SECONDS:-12}
+      FLOODINSIGHT_INGESTION_MAX_ATTEMPTS: ${FLOODINSIGHT_INGESTION_MAX_ATTEMPTS:-3}
+      FLOODINSIGHT_INGESTION_FORECAST_HOURS: ${FLOODINSIGHT_INGESTION_FORECAST_HOURS:-24}
+      <<: *postgres-environment
+      POSTGRES_HOST: postgres
+    ports:
+      - "127.0.0.1:${INGESTION_PORT:-8001}:8000"
+    depends_on:
+      warehouse-migrate:
+        condition: service_completed_successfully
+
+  warehouse-migrate:
+    <<: *runtime
+    build: ./services/warehouse-service
+    command: ["alembic", "upgrade", "head"]
+    volumes:
+      - ./services/warehouse-service/migrations:/app/migrations:ro
+    environment:
+      <<: *postgres-environment
+      POSTGRES_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   warehouse-service:
     <<: *python-service
@@ -47,8 +73,8 @@ services:
       <<: *postgres-environment
       POSTGRES_HOST: postgres
     depends_on:
-      postgres:
-        condition: service_healthy
+      warehouse-migrate:
+        condition: service_completed_successfully
 
   analysis-service:
     <<: *python-service

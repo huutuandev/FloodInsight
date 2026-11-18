@@ -27,7 +27,7 @@ Each Python service has an independently buildable Docker image, runtime and tes
 
 | Service | Planned responsibilities |
 | --- | --- |
-| ingestion-service | Fetch real observations and historical records from verified providers. Schedule collection with APScheduler. |
+| ingestion-service | Fetch and validate Open-Meteo model snapshots and record scheduled and manual runs. |
 | warehouse-service | Validate and transform data with Pandas. Own the PostgreSQL schema, loading contracts, and Alembic migrations. |
 | analysis-service | Compute rainfall time series, aggregations, and descriptive statistics with Pandas and NumPy. |
 | clustering-service | Group observations or locations using scikit-learn. |
@@ -37,9 +37,9 @@ Each Python service has an independently buildable Docker image, runtime and tes
 | frontend | Present rainfall analytics and geographic layers with Next.js App Router, Tailwind CSS, Apache ECharts, and React Leaflet. |
 | postgres | Persist warehouse data in PostgreSQL 16 on a named volume. |
 
-Planned flow is from weather providers through ingestion into the warehouse. Analytics and ML services consume warehouse data through contracts to be defined. The API exposes results to the dashboard. The ML services have Joblib available for model persistence. Charts, maps, weather providers, ingestion schedules, and service-to-service data contracts are future work.
+Planned flow is from weather providers through ingestion into the warehouse. Analytics and ML services consume warehouse data through contracts to be defined. The API exposes results to the dashboard. The ML services have Joblib available for model persistence. The ingestion service captures Open-Meteo modeled weather snapshots. Historical observation providers, charts, maps, and analytics data contracts are future work.
 
-Each Python service exposes `GET /health` as a liveness check. The warehouse starts after PostgreSQL can run an authenticated query, and the frontend starts after the API passes its health check. Services share the project-scoped `floodinsight-internal` bridge network. The warehouse connects to `postgres:5432`, and the frontend forwards `/api/health` to `api-service:8000`. Only the frontend and public API publish ports, both on the host loopback interface.
+Each Python service exposes `GET /health` as a liveness check. The warehouse migration job runs after PostgreSQL can execute an authenticated query. Ingestion and the warehouse API start after migrations succeed. The frontend starts after the public API passes its health check. Services share the project-scoped `floodinsight-internal` bridge network. The warehouse connects to `postgres:5432`, and the frontend forwards `/api/health` to `api-service:8000`. The frontend, public API, and ingestion API publish ports on the host loopback interface.
 
 ## Docker development
 
@@ -63,8 +63,10 @@ docker compose down
 
 Python services emit JSON records with timestamp, severity, logger, and message. Docker stores all container output with its rotating JSON log driver. Next.js and PostgreSQL retain their native log message format inside those Docker records.
 
-PostgreSQL data persists in the named `postgres-data` volume after `docker compose down`. PostgreSQL applies the user, password, and database settings when initializing an empty data directory. Apply the warehouse schema with `docker compose exec warehouse-service alembic upgrade head`. See the [warehouse design and ERD](docs/warehouse-schema.md) for table grains, replay keys, timezone behavior, and verification instructions.
+PostgreSQL data persists in the named `postgres-data` volume after `docker compose down`. PostgreSQL applies the user, password, and database settings when initializing an empty data directory. Compose applies warehouse migrations automatically. Apply them explicitly with `docker compose exec warehouse-service alembic upgrade head` when needed. See the [warehouse design and ERD](docs/warehouse-schema.md) for table grains, replay keys, timezone behavior, and verification instructions.
 
+
+The [Open-Meteo ingestion guide](docs/ingestion.md) documents sampling points, scheduling, timestamp semantics, and the ingestion REST API on `localhost:8001`.
 
 ## Local development and tests
 
