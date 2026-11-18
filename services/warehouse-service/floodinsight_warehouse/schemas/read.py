@@ -22,3 +22,6 @@ class Filters(LocationFilters):
             raise ValueError("Select an inclusive range of up to 3,660 days")
         return self
 
+
+class CoverageFilters(LocationFilters):
+    source: str = Field(default="open-meteo-archive-era5", min_length=1, max_length=100)

@@ -5,7 +5,7 @@ from pydantic import Field, JsonValue, TypeAdapter, ValidationError
 
 from ..schemas.gateway import (
     AnalysisQuery, AnalysisScope, BatchRequest, ClassTrain, ClusterRun, ClusterTrain,
-    ETLRequest, Failure, ForecastRow, ForecastTrain, LocationRow, Locations, Meta,
+    CoverageQuery, CoverageRow, ETLRequest, Failure, ForecastRow, ForecastTrain, LocationRow, Locations, Meta,
     ModelPage, NextDay, ObservationRow, Page, Period, RainfallRow, Success, Version, WeatherQuery,
 )
 from ..services.upstream import UpstreamError
@@ -68,6 +68,11 @@ async def forecasts(request: Request, query: Annotated[WeatherQuery, Query()]):
 @router.get("/rainfall/daily", tags=["rainfall"], response_model=Success[list[RainfallRow]])
 async def daily_rainfall(request: Request, query: Annotated[WeatherQuery, Query()]):
     return await warehouse_page(request, "/warehouse/rainfall/daily", query, RainfallRow, "observed_rainfall_daily")
+
+
+@router.get("/rainfall/coverage", tags=["rainfall"], response_model=Success[list[CoverageRow]])
+async def rainfall_coverage(request: Request, query: Annotated[CoverageQuery, Query()]):
+    return await warehouse_page(request, "/warehouse/rainfall/coverage", query, CoverageRow, "rainfall_coverage")
 
 
 @router.get("/rainfall/{period}", tags=["rainfall"], response_model=Success[list[RainfallRow]])

@@ -3,6 +3,19 @@ from sqlalchemy import create_engine, text
 from ..config import DatabaseSettings
 
 QUERIES = {
+    "rainfall_coverage": """
+        SELECT l.code AS location, d.code AS source,
+               min(f.local_date) AS first_date, max(f.local_date) AS last_date,
+               count(*) AS days_with_rainfall
+        FROM fact_rainfall_daily f
+        JOIN dim_location l ON l.id = f.location_id
+        JOIN dim_weather_source s ON s.id = f.weather_source_id
+        JOIN data_sources d ON d.id = s.data_source_id
+        WHERE (CAST(:location AS text) IS NULL OR l.code = :location)
+          AND d.code = :source
+        GROUP BY l.code, d.code
+        ORDER BY l.code, d.code
+    """,
     "locations": """
         SELECT code, name, latitude, longitude FROM dim_location
         WHERE (CAST(:location AS text) IS NULL OR code = :location)

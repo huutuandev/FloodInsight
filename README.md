@@ -76,6 +76,8 @@ See the [machine-learning guide](docs/machine-learning.md) for the three model A
 
 See the [REST API gateway guide](docs/api-gateway.md) for routes, filters, response envelopes, and manual operations.
 
+See the [dashboard guide](docs/dashboard.md) for the frontend, data filters, and browser verification.
+
 ## Local development and tests
 
 From any Python service directory, create and activate a virtual environment using Python 3.11 or newer, then run:

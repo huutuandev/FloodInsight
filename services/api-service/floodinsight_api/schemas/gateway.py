@@ -165,3 +165,14 @@ class RainfallRow(BaseModel):
     loaded_hours: int
     expected_hours: int
 
+
+class CoverageQuery(Locations):
+    source: Code = "open-meteo-archive-era5"
+
+
+class CoverageRow(BaseModel):
+    location: str
+    source: str
+    first_date: date
+    last_date: date
+    days_with_rainfall: int

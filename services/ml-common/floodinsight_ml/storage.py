@@ -71,20 +71,7 @@ class Models:
         # Unique filenames also keep a durable artifact if a DB commit outcome is ambiguous.
         return row
 
-    def lookup(self, version):
-        with connect() as conn:
-            result = conn.execute("""
-                SELECT id, kind, model_name, version, artifact_uri, created_at, training_metadata
-                FROM model_versions
-                WHERE kind = %s AND model_name = %s AND (%s::text IS NULL OR version = %s)
-                ORDER BY id DESC LIMIT 1
-            """, (self.kind, self.name, version, version)).fetchone()
-        if result is None:
-            raise ModelUnavailable("Train or select an existing model version")
-        return result
-
-    def load(self, version):
-        model = self.lookup(version)
+    def artifact_path(self, model):
         expected_name = f"{model['version']}.joblib"
         path = self.directory / expected_name
         if (
@@ -93,6 +80,29 @@ class Models:
             or model["training_metadata"].get("sklearn_version") != sklearn.__version__
             or digest(path) != model["training_metadata"].get("sha256")
         ):
-            raise ModelUnavailable("Artifact is missing, changed, or requires a different scikit-learn version")
-        return model, joblib.load(path)
+            raise ModelUnavailable("Registered model artifact is missing, changed, or incompatible")
+        return path
 
+    def lookup(self, version):
+        with connect() as conn:
+            models = conn.execute("""
+                SELECT id, kind, model_name, version, artifact_uri, created_at, training_metadata
+                FROM model_versions
+                WHERE kind = %s AND model_name = %s AND (%s::text IS NULL OR version = %s)
+                ORDER BY id DESC
+            """, (self.kind, self.name, version, version)).fetchall()
+        if not models:
+            raise ModelUnavailable("Train or select an existing model version")
+        for model in models:
+            try:
+                self.artifact_path(model)
+            except ModelUnavailable:
+                if version:
+                    raise
+            else:
+                return model
+        raise ModelUnavailable("No registered model has a usable artifact")
+
+    def load(self, version):
+        model = self.lookup(version)
+        return model, joblib.load(self.artifact_path(model))
