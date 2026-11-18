@@ -262,6 +262,7 @@ class ModelVersion(Base):
     __table_args__ = (
         UniqueConstraint("kind", "model_name", "version"),
         UniqueConstraint("id", "kind"),
+        CheckConstraint("jsonb_typeof(training_metadata) = 'object'", name="training_metadata_object"),
         CheckConstraint("kind IN ('clustering', 'prediction', 'classification')", name="kind"),
     )
 
@@ -270,6 +271,7 @@ class ModelVersion(Base):
     model_name: Mapped[str] = mapped_column(String(100))
     version: Mapped[str] = mapped_column(String(80))
     artifact_uri: Mapped[str | None] = mapped_column(Text)
+    training_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -322,6 +324,7 @@ class ClusteringResult(WindowedResult, Base):
     __tablename__ = "clustering_results"
     __table_args__ = (
         *model_checks("clustering"),
+        CheckConstraint("jsonb_typeof(details) = 'object'", name="details_object"),
         UniqueConstraint(
             "model_version_id", "location_id", "weather_source_id", "window_start_utc", "window_end_utc"
         ),
@@ -336,6 +339,7 @@ class ClusteringResult(WindowedResult, Base):
     model_version_id: Mapped[int] = mapped_column(BigInteger)
     model_kind: Mapped[str] = mapped_column(String(16), server_default=text("'clustering'"))
     cluster_label: Mapped[int] = mapped_column(Integer)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
 
 
 class PredictionResult(HourlyModelResult, Base):
@@ -359,6 +363,7 @@ class ClassificationResult(HourlyModelResult, Base):
     __tablename__ = "classification_results"
     __table_args__ = (
         *model_checks("classification"),
+        CheckConstraint("jsonb_typeof(probabilities) = 'object'", name="probabilities_object"),
         UniqueConstraint(
             "model_version_id", "location_id", "weather_source_id", "target_hour_utc", "issued_at"
         ),
@@ -371,6 +376,7 @@ class ClassificationResult(HourlyModelResult, Base):
     model_kind: Mapped[str] = mapped_column(String(16), server_default=text("'classification'"))
     label: Mapped[str] = mapped_column(String(100))
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(7, 6))
+    probabilities: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
 
 
 class WarehouseRun(Base):
