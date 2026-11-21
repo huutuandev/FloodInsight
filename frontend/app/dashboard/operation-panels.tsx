@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Clock3, Database, Layers3 } from "lucide-react";
+import { Activity, Clock3, Database, Layers3, RefreshCw, Sparkles, TrendingUp } from "lucide-react";
 import type { EChartsOption } from "echarts";
 import { Chart } from "./chart";
 import {
@@ -22,27 +22,112 @@ function usePage<T>(path: string, offset: number) {
   });
 }
 
-function clusterOption(rows: Cluster[]): EChartsOption {
-  const groups = new Map<number, [number, number, string][]>();
+function clusterOption(rows: Cluster[], locations: Location[]): EChartsOption {
+  const groups = new Map<number, [number, number, string, string][]>();
   for (const row of rows) {
     if (row.details.pc1 == null || row.details.pc2 == null) continue;
+    const locName = locationName(row.location, locations);
+    const dateStr = localDay(row.window_start_utc);
     groups.set(row.cluster_label, [...(groups.get(row.cluster_label) ?? []),
-      [row.details.pc1, row.details.pc2, row.location + " · " + localDay(row.window_start_utc)]]);
+      [row.details.pc1, row.details.pc2, locName, dateStr]]);
   }
+
+  const clusterColors = ["#2dd4bf", "#38bdf8", "#818cf8", "#f59e0b", "#ec4899", "#a855f7"];
+
   return {
-    tooltip: { trigger: "item" }, xAxis: { name: "PC1", type: "value" }, yAxis: { name: "PC2", type: "value" },
+    tooltip: {
+      trigger: "item",
+      formatter: (params: unknown) => {
+        const p = params as { data?: [number, number, string, string]; seriesName?: string };
+        const [pc1, pc2, loc, date] = p.data || [];
+        return `<div style="font-size:12px; line-height:1.5;">
+          <strong style="color:#38bdf8;">${loc ?? ""}</strong> · ${date ?? ""}<br/>
+          <span style="opacity:0.8;">Cụm / Cluster:</span> <b>${p.seriesName ?? ""}</b><br/>
+          <span>PC1: <b>${displayNumber(pc1, 2)}</b> | PC2: <b>${displayNumber(pc2, 2)}</b></span>
+        </div>`;
+      },
+    },
+    color: clusterColors,
+    xAxis: { name: "PC1", type: "value", splitLine: { show: true } },
+    yAxis: { name: "PC2", type: "value", splitLine: { show: true } },
     series: [...groups.entries()].sort(([a], [b]) => a - b)
-      .map(([id, data]) => ({ type: "scatter", name: "Cluster " + id, data, symbolSize: 10 })),
+      .map(([id, data]) => ({
+        type: "scatter",
+        name: `Cụm ${id}`,
+        data,
+        symbolSize: 9,
+        itemStyle: { opacity: 0.85 },
+        emphasis: { itemStyle: { opacity: 1, borderWidth: 2 } },
+      })),
   };
+}
+
+function RainfallBadge({ mm }: { mm: number | null }) {
+  if (mm == null) return <span>—</span>;
+  let bg = "rgba(45, 212, 191, 0.14)";
+  let color = "#2dd4bf";
+  let label = "Mưa nhỏ";
+  let border = "rgba(45, 212, 191, 0.3)";
+
+  if (mm >= 100) {
+    bg = "rgba(244, 63, 94, 0.18)";
+    color = "#f43f5e";
+    label = "Mưa rất to / Ngập cao";
+    border = "rgba(244, 63, 94, 0.4)";
+  } else if (mm >= 50) {
+    bg = "rgba(249, 115, 22, 0.18)";
+    color = "#fb923c";
+    label = "Mưa to";
+    border = "rgba(249, 115, 22, 0.4)";
+  } else if (mm >= 16) {
+    bg = "rgba(234, 179, 8, 0.18)";
+    color = "#facc15";
+    label = "Mưa vừa";
+    border = "rgba(234, 179, 8, 0.4)";
+  }
+
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: "7px" }}>
+      <strong style={{ fontSize: "13.5px", color }}>{displayNumber(mm)} mm</strong>
+      <span style={{
+        fontSize: "10.5px",
+        padding: "2px 7px",
+        borderRadius: "999px",
+        backgroundColor: bg,
+        color,
+        border: `1px solid ${border}`,
+        fontWeight: 700,
+        whiteSpace: "nowrap",
+      }}>
+        {label}
+      </span>
+    </div>
+  );
 }
 
 function Confusion({ labels, matrix, theme }: { labels: string[]; matrix: number[][]; theme: Theme }) {
   const cells = matrix.flatMap((row, y) => row.map((count, x) => [x, y, count]));
+  const maxVal = Math.max(1, ...cells.map((cell) => cell[2]));
   return <Chart theme={theme} label="Rainfall classification confusion matrix" option={{
-    tooltip: {}, xAxis: { type: "category", name: "Predicted", data: labels },
-    yAxis: { type: "category", name: "Actual", data: labels },
-    visualMap: { min: 0, max: Math.max(1, ...cells.map((cell) => cell[2])) },
-    series: [{ type: "heatmap", data: cells, label: { show: true } }],
+    tooltip: {
+      formatter: (params: unknown) => {
+        const p = params as { data: [number, number, number] };
+        const [x, y, val] = p.data;
+        return `Thực tế (Actual): <b>${labels[y]}</b><br/>Dự đoán (Predicted): <b>${labels[x]}</b><br/>Số mẫu: <b>${val}</b>`;
+      },
+    },
+    xAxis: { type: "category", name: "Dự đoán (Predicted)", data: labels },
+    yAxis: { type: "category", name: "Thực tế (Actual)", data: labels },
+    visualMap: {
+      min: 0,
+      max: maxVal,
+      calculable: true,
+    },
+    series: [{
+      type: "heatmap",
+      data: cells,
+      label: { show: true, fontWeight: "bold" },
+    }],
   }} />;
 }
 
@@ -54,66 +139,118 @@ export function MachineLearning({ scope, filterForecasts, locations, theme }: { 
   const clusterMetrics = useData<Evaluation>("clustering/metrics");
   const predictMetrics = useData<Evaluation>("predictions/metrics");
   const classMetrics = useData<Evaluation>("classifications/metrics");
+
   return <>
-    <Panel title="Weather clusters" subtitle="Principal component projection from the trained K-means model · up to 500 results">
+    <Panel
+      title="Phân cụm hình thế thời tiết (K-Means Clustering)"
+      headingLabel="Weather clusters"
+      subtitle="Chiếu không gian thành phần chính (PCA 2D) từ mô hình K-Means đã huấn luyện · Tối đa 500 kết quả"
+      action={<Sparkles className="accent" size={19} />}
+    >
       <Resource query={clusters} missingModel>{(rows) => {
-        const option = clusterOption(rows);
+        const option = clusterOption(rows, locations);
         return Array.isArray(option.series) && option.series.length
           ? <Chart theme={theme} option={option} label="Weather cluster projection" />
-          : <Empty title="No PCA coordinates available" />;
+          : <Empty title="Chưa có tọa độ chiếu PCA" />;
       }}</Resource>
       <Resource query={clusterMetrics} missingModel>{(value) => <div className="metrics-inline">
-        <span>Training samples <strong>{displayNumber(value.metrics.samples, 0)}</strong></span>
-        <span>Silhouette score <strong>{displayNumber(value.metrics.silhouette_score, 3)}</strong></span>
+        <span>Mẫu huấn luyện: <strong>{displayNumber(value.metrics.samples, 0)}</strong></span>
+        <span>Hệ số Silhouette: <strong style={{ color: "var(--accent)" }}>{displayNumber(value.metrics.silhouette_score, 3)}</strong></span>
+        {value.version && <span>Phiên bản: <code>{value.version.slice(0, 10)}</code></span>}
       </div>}</Resource>
     </Panel>
+
     <div className="two-col grid">
-      <Panel title="Next-day rainfall" subtitle={filterForecasts ? "Stored ML predictions for the selected target dates" : "Latest stored ML predictions"}>
+      <Panel
+        title="Dự báo lượng mưa ngày tới (Regression)"
+        headingLabel="Next-day rainfall"
+        subtitle={filterForecasts ? "Kết quả dự báo học máy theo khoảng ngày đã chọn" : "Các dự báo lượng mưa mới nhất được lưu trữ"}
+        action={<TrendingUp className="accent" size={19} />}
+      >
         <Resource query={predictions} missingModel>{(rows) => <div className="table-wrap"><table>
-          <thead><tr><th>Location</th><th>Target date</th><th>Predicted mm</th><th>Issued (ICT)</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Khu vực / Quận</th>
+              <th>Ngày dự báo</th>
+              <th aria-label="Predicted mm">Lượng mưa dự báo</th>
+              <th>Thời điểm phát hành (ICT)</th>
+            </tr>
+          </thead>
           <tbody>{rows.map((row) => <tr key={row.location + row.target_date + row.issued_at}>
-            <td>{locationName(row.location, locations)}</td><td>{row.target_date}</td>
-            <td>{displayNumber(row.rainfall_mm)}</td><td>{localTime(row.issued_at)}</td>
-          </tr>)}</tbody></table></div>}</Resource>
+            <td><strong>{locationName(row.location, locations)}</strong></td>
+            <td>{row.target_date}</td>
+            <td><RainfallBadge mm={row.rainfall_mm} /></td>
+            <td>{localTime(row.issued_at)}</td>
+          </tr>)}</tbody>
+        </table></div>}</Resource>
       </Panel>
-      <Panel title="Rainfall classification" subtitle="Latest stored rainfall intensity estimates">
+
+      <Panel
+        title="Phân loại cấp độ mưa (Classification)"
+        headingLabel="Rainfall classification"
+        subtitle="Ước lượng xác suất cường độ mưa từ mô hình Random Forest Classifier"
+        action={<Activity className="accent" size={19} />}
+      >
         <Resource query={classification} missingModel>{(rows) => <div className="classification-list">
           {rows.map((row) => <details key={row.location + row.target_date + row.issued_at}>
-            <summary><span>{locationName(row.location, locations)} · {row.target_date}</span>
-              <strong>{row.label} {row.confidence == null ? "" : `· ${displayNumber(row.confidence * 100)}%`}</strong></summary>
-            <p>Issued {localTime(row.issued_at)} ICT</p>
+            <summary>
+              <span>{locationName(row.location, locations)} · {row.target_date}</span>
+              <strong>{row.label} {row.confidence == null ? "" : `· ${displayNumber(row.confidence * 100)}%`}</strong>
+            </summary>
+            <p>Phát hành lúc {localTime(row.issued_at)} ICT</p>
             {Object.entries(row.probabilities ?? {}).map(([name, value]) => <div className="probability" key={name}>
-              <span>{name}</span><progress max={1} value={value} aria-label={name} /><span>{displayNumber(value * 100)}%</span>
+              <span>{name}</span>
+              <progress max={1} value={value} aria-label={name} />
+              <span>{displayNumber(value * 100)}%</span>
             </div>)}
-          </details>)}</div>}</Resource>
+          </details>)}
+        </div>}</Resource>
       </Panel>
     </div>
+
     <div className="two-col grid">
-      <Panel title="Regression evaluation" subtitle="Held-out test set · error in millimeters">
+      <Panel
+        title="Đánh giá mô hình hồi quy (Regression Evaluation)"
+        headingLabel="Regression evaluation"
+        subtitle="Tập kiểm thử độc lập (Held-out test set) · Đơn vị sai số: milimét (mm)"
+      >
         <Resource query={predictMetrics} missingModel>{(data) => {
           const test = data.metrics.test;
           return test?.random_forest ? <div className="table-wrap"><table>
-            <caption>{data.scope?.availability ?? "Recorded"} evaluation</caption>
-            <thead><tr><th>Model</th><th>MAE</th><th>RMSE</th></tr></thead>
-            <tbody><tr><td>Random forest</td><td>{displayNumber(test.random_forest.mae_mm, 2)}</td>
-              <td>{displayNumber(test.random_forest.rmse_mm, 2)}</td></tr>
-              {test.lag_8_persistence && <tr><td>Persistence baseline</td><td>{displayNumber(test.lag_8_persistence.mae_mm, 2)}</td>
-                <td>{displayNumber(test.lag_8_persistence.rmse_mm, 2)}</td></tr>}</tbody>
-          </table></div> : <Empty title="No evaluation metrics" />;
+            <caption>Đánh giá chế độ {data.scope?.availability ?? "Recorded"}</caption>
+            <thead><tr><th>Mô hình</th><th>MAE (mm)</th><th>RMSE (mm)</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><strong>Random Forest Regressor</strong></td>
+                <td><strong style={{ color: "var(--accent)" }}>{displayNumber(test.random_forest.mae_mm, 2)}</strong></td>
+                <td><strong>{displayNumber(test.random_forest.rmse_mm, 2)}</strong></td>
+              </tr>
+              {test.lag_8_persistence && <tr>
+                <td>Persistence Baseline</td>
+                <td>{displayNumber(test.lag_8_persistence.mae_mm, 2)}</td>
+                <td>{displayNumber(test.lag_8_persistence.rmse_mm, 2)}</td>
+              </tr>}
+            </tbody>
+          </table></div> : <Empty title="Chưa có chỉ số đánh giá mô hình" />;
         }}</Resource>
       </Panel>
-      <Panel title="Classification evaluation" subtitle="Held-out test set · rainfall intensity">
+
+      <Panel
+        title="Đánh giá mô hình phân loại (Classification Evaluation)"
+        headingLabel="Classification evaluation"
+        subtitle="Tập kiểm thử độc lập · Độ đo phân loại cường độ mưa và Ma trận nhầm lẫn"
+      >
         <Resource query={classMetrics} missingModel>{(data) => {
           const test = data.metrics.test;
           return test ? <>
             <div className="metrics-inline">
-              <span>Macro F1 <strong>{displayNumber(test.f1_macro, 3)}</strong></span>
-              <span>Precision <strong>{displayNumber(test.precision_macro, 3)}</strong></span>
-              <span>Recall <strong>{displayNumber(test.recall_macro, 3)}</strong></span>
+              <span>Macro F1: <strong>{displayNumber(test.f1_macro, 3)}</strong></span>
+              <span>Precision: <strong>{displayNumber(test.precision_macro, 3)}</strong></span>
+              <span>Recall: <strong>{displayNumber(test.recall_macro, 3)}</strong></span>
             </div>
-            {data.scope?.availability && <p className="chart-note">{data.scope.availability} evaluation</p>}
+            {data.scope?.availability && <p className="chart-note">Chế độ đánh giá: {data.scope.availability}</p>}
             {test.confusion_matrix && data.class_order && <Confusion labels={data.class_order} matrix={test.confusion_matrix} theme={theme} />}
-          </> : <Empty title="No evaluation metrics" />;
+          </> : <Empty title="Chưa có chỉ số đánh giá mô hình" />;
         }}</Resource>
       </Panel>
     </div>
@@ -122,11 +259,21 @@ export function MachineLearning({ scope, filterForecasts, locations, theme }: { 
 
 function Runs({ rows, warehouse = false }: { rows: Run[]; warehouse?: boolean }) {
   return <div className="table-wrap"><table>
-    <thead><tr><th>Run</th><th>{warehouse ? "Operation" : "Trigger"}</th><th>Status</th><th>Started (ICT)</th><th>{warehouse ? "Finished (ICT)" : "Inserted"}</th></tr></thead>
+    <thead>
+      <tr>
+        <th>Mã chạy</th>
+        <th>{warehouse ? "Thao tác ETL" : "Kích hoạt"}</th>
+        <th>Trạng thái</th>
+        <th>Bắt đầu (ICT)</th>
+        <th>{warehouse ? "Hoàn thành (ICT)" : "Số bản ghi nạp"}</th>
+      </tr>
+    </thead>
     <tbody>{rows.map((row) => <tr key={row.id} title={row.error_message ?? undefined}>
-      <td>#{row.id}</td><td>{(warehouse ? row.operation : row.trigger) ?? "—"}</td>
+      <td><strong>#{row.id}</strong></td>
+      <td>{(warehouse ? row.operation : row.trigger) ?? "—"}</td>
       <td><StatePill status={row.status} />{row.error_message && <small className="run-error">{row.error_message}</small>}</td>
-      <td>{localTime(row.started_at)}</td><td>{warehouse ? localTime(row.finished_at) : displayNumber(row.records_inserted, 0)}</td>
+      <td>{localTime(row.started_at)}</td>
+      <td>{warehouse ? localTime(row.finished_at) : <strong>{displayNumber(row.records_inserted, 0)}</strong>}</td>
     </tr>)}</tbody>
   </table></div>;
 }
@@ -147,41 +294,74 @@ export function DataManagement({ locations }: { locations: Location[] }) {
     },
   });
   const success = ingestHistory.data?.find((row) => row.status === "succeeded");
+
   return <>
     <div className="data-grid grid">
-      <Panel title="Last successful ingestion" subtitle="Within the most recent 99 runs" action={<Clock3 className="accent" size={19} />}>
+      <Panel title="Lần thu thập thành công gần nhất" headingLabel="Last successful ingestion" subtitle="Trong 99 phiên chạy gần nhất" action={<Clock3 className="accent" size={19} />}>
         {ingestHistory.isPending ? <Loading compact /> : ingestHistory.error ?
           <QueryError error={ingestHistory.error} retry={() => void ingestHistory.refetch()} />
-          : <div className="summary-value">{success ? localTime(success.finished_at) + " ICT" : "No successful runs"}</div>}
+          : <div className="summary-value">{success ? localTime(success.finished_at) + " ICT" : "Chưa có phiên thành công"}</div>}
       </Panel>
-      <Panel title="Downloaded batches" action={<Database className="accent" size={19} />}>
+      <Panel title="Gói dữ liệu thô đã tải" headingLabel="Downloaded batches" subtitle="Lô lưu trữ từ Open-Meteo" action={<Database className="accent" size={19} />}>
         {warehouse.isPending ? <Loading compact /> : <div className="summary-value">{displayNumber(warehouse.data?.downloaded_batches, 0)}</div>}
       </Panel>
-      <Panel title="Loaded ETL batches" action={<Layers3 className="accent" size={19} />}>
+      <Panel title="Gói dữ liệu đã nạp ETL" headingLabel="Loaded ETL batches" subtitle="Đã chuẩn hóa vào Star Schema" action={<Layers3 className="accent" size={19} />}>
         {warehouse.isPending ? <Loading compact /> : <div className="summary-value">{displayNumber(warehouse.data?.loaded_batches, 0)}</div>}
       </Panel>
     </div>
-    <Panel title="Ingestion history" subtitle="Open-Meteo collection runs"
-      action={<button className="button secondary" onClick={() => ingest.mutate()} disabled={ingest.isPending}>
-        {ingest.isPending ? "Collecting…" : "Run ingestion"}</button>}>
+
+    <Panel
+      title="Lịch sử thu thập dữ liệu (Ingestion History)"
+      headingLabel="Ingestion history"
+      subtitle="Các phiên thu thập dữ liệu khí tượng từ Open-Meteo"
+      action={<button className="button primary" aria-label="Run ingestion" onClick={() => ingest.mutate()} disabled={ingest.isPending}>
+        <RefreshCw size={14} className={ingest.isPending ? "spin" : ""} />
+        {ingest.isPending ? "Đang thu thập…" : "Thu thập ngay"}
+      </button>}
+    >
       {ingest.error && <QueryError error={ingest.error} retry={() => ingest.mutate()} />}
-      {ingest.isSuccess && <p className="chart-note" role="status">Run #{ingest.data.data.id} succeeded.</p>}
-      <Resource query={history}>{(page) => page.data.length ? <Runs rows={page.data} /> : <Empty title="No ingestion runs on this page" />}</Resource>
+      {ingest.isSuccess && <p className="chart-note" role="status" style={{ color: "var(--accent)" }}>✓ Phiên thu thập #{ingest.data.data.id} đã hoàn tất thành công.</p>}
+      <Resource query={history}>{(page) => page.data.length ? <Runs rows={page.data} /> : <Empty title="Không có lịch sử thu thập trên trang này" />}</Resource>
       <Pager offset={historyOffset} limit={size} more={Boolean(history.data?.meta?.has_more)} setOffset={setHistoryOffset} />
     </Panel>
-    <Panel title="Warehouse ETL" subtitle="Recent archive and transformation runs">
-      <Resource query={warehouse}>{(data) => data.runs.length ? <Runs warehouse rows={data.runs} /> : <Empty title="No warehouse runs" />}</Resource>
+
+    <Panel title="Tiến trình kho dữ liệu ETL (Warehouse ETL)" headingLabel="Warehouse ETL" subtitle="Lịch sử lưu trữ và biến đổi dữ liệu vào bảng Fact & Dimension">
+      <Resource query={warehouse}>{(data) => data.runs.length ? <Runs warehouse rows={data.runs} /> : <Empty title="Chưa có phiên chạy ETL" />}</Resource>
     </Panel>
-    <Panel title="Data quality" subtitle="Rainfall coverage from completed ETL batches">
+
+    <Panel title="Chất lượng & độ bao phủ dữ liệu (Data Quality)" headingLabel="Data quality" subtitle="Độ bao phủ dữ liệu lượng mưa từ các lô ETL đã hoàn tất">
       <Resource query={quality}>{(page) => page.data.length ? <div className="table-wrap"><table>
-        <thead><tr><th>Location</th><th>Start</th><th>End</th><th>Rainfall coverage</th><th>Missing timestamps</th></tr></thead>
-        <tbody>{page.data.map((row) => <tr key={row.id}><td>{locationName(row.location_code, locations)}</td>
-          <td>{row.start_date}</td><td>{row.end_date}</td>
-          <td>{displayNumber(row.quality.rainfall_coverage_hours, 0)} / {displayNumber(row.quality.expected_hours, 0)} h</td>
-          <td>{displayNumber(row.quality.missing_raw_timestamps, 0)}</td></tr>)}</tbody></table></div>
-        : <Empty title="No data-quality reports on this page" />}</Resource>
+        <thead>
+          <tr>
+            <th>Khu vực / Trạm</th>
+            <th>Từ ngày</th>
+            <th>Đến ngày</th>
+            <th>Độ bao phủ lượng mưa</th>
+            <th aria-label="Missing timestamps">Số mốc giờ thiếu</th>
+          </tr>
+        </thead>
+        <tbody>{page.data.map((row) => {
+          const expected = row.quality.expected_hours ?? 0;
+          const covered = row.quality.rainfall_coverage_hours ?? 0;
+          const pct = expected > 0 ? Math.min(100, (covered / expected) * 100) : 0;
+          return <tr key={row.id}>
+            <td><strong>{locationName(row.location_code, locations)}</strong></td>
+            <td>{row.start_date}</td>
+            <td>{row.end_date}</td>
+            <td>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <div style={{ width: "54px", background: "rgba(148,174,201,0.16)", height: "6px", borderRadius: "999px", overflow: "hidden" }}>
+                  <div style={{ width: `${pct}%`, height: "100%", background: pct >= 95 ? "var(--accent)" : "var(--warning)" }} />
+                </div>
+                <span>{displayNumber(covered, 0)} / {displayNumber(expected, 0)} h</span>
+              </div>
+            </td>
+            <td>{displayNumber(row.quality.missing_raw_timestamps, 0)}</td>
+          </tr>;
+        })}</tbody>
+      </table></div>
+        : <Empty title="Không có báo cáo chất lượng dữ liệu trên trang này" />}</Resource>
       <Pager offset={qualityOffset} limit={size} more={Boolean(quality.data?.meta?.has_more)} setOffset={setQualityOffset} />
     </Panel>
   </>;
 }
-
