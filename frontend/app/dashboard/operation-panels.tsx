@@ -32,7 +32,7 @@ function clusterOption(rows: Cluster[], locations: Location[]): EChartsOption {
       [row.details.pc1, row.details.pc2, locName, dateStr]]);
   }
 
-  const clusterColors = ["#2dd4bf", "#38bdf8", "#818cf8", "#f59e0b", "#ec4899", "#a855f7"];
+  const clusterColors = ["#2878B5", "#368F91", "#E9A23B", "#17365D", "#299D70", "#D9534F"];
 
   return {
     tooltip: {
@@ -41,8 +41,8 @@ function clusterOption(rows: Cluster[], locations: Location[]): EChartsOption {
         const p = params as { data?: [number, number, string, string]; seriesName?: string };
         const [pc1, pc2, loc, date] = p.data || [];
         return `<div style="font-size:12px; line-height:1.5;">
-          <strong style="color:#38bdf8;">${loc ?? ""}</strong> · ${date ?? ""}<br/>
-          <span style="opacity:0.8;">Cụm / Cluster:</span> <b>${p.seriesName ?? ""}</b><br/>
+          <strong style="color:#17365D;">${loc ?? ""}</strong> · ${date ?? ""}<br/>
+          <span style="color:#64748B;">Cụm / Cluster:</span> <b>${p.seriesName ?? ""}</b><br/>
           <span>PC1: <b>${displayNumber(pc1, 2)}</b> | PC2: <b>${displayNumber(pc2, 2)}</b></span>
         </div>`;
       },
@@ -56,7 +56,7 @@ function clusterOption(rows: Cluster[], locations: Location[]): EChartsOption {
         name: `Cụm ${id}`,
         data,
         symbolSize: 9,
-        itemStyle: { opacity: 0.85 },
+        itemStyle: { opacity: 0.88 },
         emphasis: { itemStyle: { opacity: 1, borderWidth: 2 } },
       })),
   };
@@ -64,43 +64,24 @@ function clusterOption(rows: Cluster[], locations: Location[]): EChartsOption {
 
 function RainfallBadge({ mm }: { mm: number | null }) {
   if (mm == null) return <span>—</span>;
-  let bg = "rgba(45, 212, 191, 0.14)";
-  let color = "#2dd4bf";
-  let label = "Mưa nhỏ";
-  let border = "rgba(45, 212, 191, 0.3)";
+  let pillClass = "pill good";
+  let label = "Mưa nhỏ (Low)";
 
   if (mm >= 100) {
-    bg = "rgba(244, 63, 94, 0.18)";
-    color = "#f43f5e";
-    label = "Mưa rất to / Ngập cao";
-    border = "rgba(244, 63, 94, 0.4)";
+    pillClass = "pill danger";
+    label = "Mưa rất to (Very High)";
   } else if (mm >= 50) {
-    bg = "rgba(249, 115, 22, 0.18)";
-    color = "#fb923c";
-    label = "Mưa to";
-    border = "rgba(249, 115, 22, 0.4)";
+    pillClass = "pill danger";
+    label = "Mưa to (High)";
   } else if (mm >= 16) {
-    bg = "rgba(234, 179, 8, 0.18)";
-    color = "#facc15";
-    label = "Mưa vừa";
-    border = "rgba(234, 179, 8, 0.4)";
+    pillClass = "pill warn";
+    label = "Mưa vừa (Medium)";
   }
 
   return (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: "7px" }}>
-      <strong style={{ fontSize: "13.5px", color }}>{displayNumber(mm)} mm</strong>
-      <span style={{
-        fontSize: "10.5px",
-        padding: "2px 7px",
-        borderRadius: "999px",
-        backgroundColor: bg,
-        color,
-        border: `1px solid ${border}`,
-        fontWeight: 700,
-        whiteSpace: "nowrap",
-      }}>
-        {label}
-      </span>
+    <div style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+      <strong style={{ fontSize: "13.5px", color: "var(--heading)" }}>{displayNumber(mm)} mm</strong>
+      <span className={pillClass}>{label}</span>
     </div>
   );
 }
@@ -155,7 +136,7 @@ export function MachineLearning({ scope, filterForecasts, locations, theme }: { 
       }}</Resource>
       <Resource query={clusterMetrics} missingModel>{(value) => <div className="metrics-inline">
         <span>Mẫu huấn luyện: <strong>{displayNumber(value.metrics.samples, 0)}</strong></span>
-        <span>Hệ số Silhouette: <strong style={{ color: "var(--accent)" }}>{displayNumber(value.metrics.silhouette_score, 3)}</strong></span>
+        <span>Hệ số Silhouette: <strong style={{ color: "var(--ocean)" }}>{displayNumber(value.metrics.silhouette_score, 3)}</strong></span>
         {value.version && <span>Phiên bản: <code>{value.version.slice(0, 10)}</code></span>}
       </div>}</Resource>
     </Panel>
@@ -222,7 +203,7 @@ export function MachineLearning({ scope, filterForecasts, locations, theme }: { 
             <tbody>
               <tr>
                 <td><strong>Random Forest Regressor</strong></td>
-                <td><strong style={{ color: "var(--accent)" }}>{displayNumber(test.random_forest.mae_mm, 2)}</strong></td>
+                <td><strong style={{ color: "var(--ocean)" }}>{displayNumber(test.random_forest.mae_mm, 2)}</strong></td>
                 <td><strong>{displayNumber(test.random_forest.rmse_mm, 2)}</strong></td>
               </tr>
               {test.lag_8_persistence && <tr>
@@ -320,7 +301,7 @@ export function DataManagement({ locations }: { locations: Location[] }) {
       </button>}
     >
       {ingest.error && <QueryError error={ingest.error} retry={() => ingest.mutate()} />}
-      {ingest.isSuccess && <p className="chart-note" role="status" style={{ color: "var(--accent)" }}>✓ Phiên thu thập #{ingest.data.data.id} đã hoàn tất thành công.</p>}
+      {ingest.isSuccess && <p className="chart-note" role="status" style={{ color: "var(--success)" }}>✓ Phiên thu thập #{ingest.data.data.id} đã hoàn tất thành công.</p>}
       <Resource query={history}>{(page) => page.data.length ? <Runs rows={page.data} /> : <Empty title="Không có lịch sử thu thập trên trang này" />}</Resource>
       <Pager offset={historyOffset} limit={size} more={Boolean(history.data?.meta?.has_more)} setOffset={setHistoryOffset} />
     </Panel>
@@ -350,8 +331,8 @@ export function DataManagement({ locations }: { locations: Location[] }) {
             <td>{row.end_date}</td>
             <td>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <div style={{ width: "54px", background: "rgba(148,174,201,0.16)", height: "6px", borderRadius: "999px", overflow: "hidden" }}>
-                  <div style={{ width: `${pct}%`, height: "100%", background: pct >= 95 ? "var(--accent)" : "var(--warning)" }} />
+                <div style={{ width: "54px", background: "var(--stroke)", height: "6px", borderRadius: "999px", overflow: "hidden" }}>
+                  <div style={{ width: `${pct}%`, height: "100%", background: pct >= 95 ? "var(--success)" : "var(--warning)" }} />
                 </div>
                 <span>{displayNumber(covered, 0)} / {displayNumber(expected, 0)} h</span>
               </div>

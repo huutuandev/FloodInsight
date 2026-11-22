@@ -16,10 +16,15 @@ export type Markers = {
 };
 const center: [number, number] = [16.047, 108.205];
 
-export const rainColors = ["#8fa2b4", "#2dd4bf", "#f59e0b", "#ef4444"];
+// GIS Flood Risk Colors: No data (slate), Low (green), Medium (yellow), High (orange), Very High (red)
+export const rainColors = ["#94A3B8", "#299D70", "#E9A23B", "#E67E22", "#D9534F"];
 export function rainfallColor(rain?: Rain) {
   const value = rain?.rainfall_total_mm;
-  return rainColors[value == null ? 0 : value < 10 ? 1 : value < 25 ? 2 : 3];
+  if (value == null) return rainColors[0];
+  if (value < 10) return rainColors[1];
+  if (value < 25) return rainColors[2];
+  if (value < 50) return rainColors[3];
+  return rainColors[4];
 }
 
 function View({ points, selected, compact }: Pick<Markers, "points" | "selected" | "compact">) {
@@ -54,10 +59,9 @@ export default function StationMap({ points, selected, onSelect, latest, weather
   const [tileError, setTileError] = useState(false);
   const [radarEnabled, setRadarEnabled] = useState(true);
 
-  // RainViewer Live Weather Radar (Free public API, CORS-enabled)
   const radar = useQuery<RainViewerResponse>({
     queryKey: ["rainviewer-weather-maps"],
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
     refetchInterval: 5 * 60 * 1000,
     queryFn: async ({ signal }) => {
       const res = await fetch("https://api.rainviewer.com/public/weather-maps.json", { signal });
@@ -97,7 +101,6 @@ export default function StationMap({ points, selected, onSelect, latest, weather
     <div className={compact ? "map-frame compact-map" : "map-frame full-map"}>
       {tileError && <span className="tile-note">{coast.data ? "Offline coastline · Natural Earth" : "Basemap tiles unavailable"}</span>}
 
-      {/* Floating RainViewer Live Radar Control */}
       {!compact && (
         <div className="radar-overlay-controls" role="region" aria-label="RainViewer live radar control">
           <div className="radar-header">
@@ -119,15 +122,16 @@ export default function StationMap({ points, selected, onSelect, latest, weather
           {radarEnabled && (
             <>
               <div className="radar-meta">
-                <span>Nguồn: RainViewer API</span>
+                <span>Nguồn: RainViewer GIS</span>
                 <span>{radarTimeStr ? `Quét: ${radarTimeStr} ICT` : "Đang cập nhật..."}</span>
               </div>
               <div className="radar-scale">
                 <div className="radar-scale-bar" />
                 <div className="radar-scale-labels">
-                  <span>Mưa nhẹ</span>
-                  <span>Mưa vừa</span>
-                  <span>Mưa rất to</span>
+                  <span>Thấp</span>
+                  <span>Trung bình</span>
+                  <span>Cao</span>
+                  <span>Rất cao</span>
                 </div>
               </div>
             </>
@@ -151,12 +155,11 @@ export default function StationMap({ points, selected, onSelect, latest, weather
           eventHandlers={{ tileerror: () => setTileError(true), tileload: () => setTileError(false) }}
         />
 
-        {/* RainViewer Live Radar Tile Layer */}
         {radarEnabled && radarTileUrl && (
           <TileLayer
             key={radarTileUrl}
             url={radarTileUrl}
-            opacity={0.65}
+            opacity={0.62}
             zIndex={400}
             attribution={'Radar &copy; <a href="https://www.rainviewer.com/api.html">RainViewer</a>'}
           />
@@ -167,9 +170,9 @@ export default function StationMap({ points, selected, onSelect, latest, weather
             data={coast.data}
             style={{
               className: "offline-coastline",
-              color: "#71a5bb",
+              color: "#2878B5",
               weight: 2,
-              opacity: 0.84,
+              opacity: 0.85,
               interactive: false,
             }}
           />
@@ -187,15 +190,15 @@ export default function StationMap({ points, selected, onSelect, latest, weather
               center={[point.latitude, point.longitude]}
               eventHandlers={{ click: () => onSelect(point.code) }}
               radius={selected === point.code ? 11 : 8}
-              pathOptions={{ color: "#fff", weight: 2, fillColor: color, fillOpacity: 1 }}
+              pathOptions={{ color: "#17365D", weight: 2, fillColor: color, fillOpacity: 0.95 }}
             >
               <Popup autoPan={false}>
-                <strong className="popup-name" style={{ color: "#38bdf8", fontSize: "14px" }}>{point.name}</strong>
+                <strong className="popup-name" style={{ fontSize: "14px" }}>{point.name}</strong>
                 <div>Lượng mưa 24h: <strong>{displayNumber(rain?.rainfall_total_mm)} mm</strong></div>
                 {rain && <div style={{ fontSize: "11px", opacity: 0.8 }}>{rain.period_start} · {rain.rainfall_hours}/{rain.expected_hours}h ghi nhận</div>}
                 <div>Nhiệt độ quan trắc: <strong>{displayNumber(now?.payload.values.temperature_2m)} °C</strong></div>
                 <div>Độ ẩm không khí: <strong>{displayNumber(now?.payload.values.relative_humidity_2m)}%</strong></div>
-                {now && <small style={{ display: "block", marginTop: "4px", color: "var(--faint)" }}>{localTime(now.valid_at)} ICT</small>}
+                {now && <small style={{ display: "block", marginTop: "4px", color: "#64748B" }}>{localTime(now.valid_at)} ICT</small>}
               </Popup>
             </CircleMarker>
           );

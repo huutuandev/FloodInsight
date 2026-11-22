@@ -29,7 +29,7 @@ const navigation = [
     vietnamese: "Bản đồ ngập lụt",
     short: "Bản đồ",
     icon: MapPinned,
-    detail: "Bản đồ không gian các trạm quan trắc, lớp phủ Radar mây mưa và phân vùng nguy cơ ngập lụt.",
+    detail: "Bản đồ không gian GIS các trạm quan trắc, lớp phủ Radar mây mưa và phân vùng nguy cơ ngập lụt.",
   },
   {
     name: "Rainfall Analytics",
@@ -58,23 +58,23 @@ type Section = typeof navigation[number]["name"];
 type Theme = "dark" | "light";
 
 function subscribeTheme(callback: () => void) {
-  window.addEventListener("floodinsight-theme", callback);
+  window.addEventListener("floodinsight-ui-theme", callback);
   window.addEventListener("storage", callback);
   return () => {
-    window.removeEventListener("floodinsight-theme", callback);
+    window.removeEventListener("floodinsight-ui-theme", callback);
     window.removeEventListener("storage", callback);
   };
 }
 function getTheme(): Theme {
-  return localStorage.getItem("floodinsight-theme") === "light" ? "light" : "dark";
+  return localStorage.getItem("floodinsight-ui-theme") === "dark" ? "dark" : "light";
 }
-function serverTheme(): Theme { return "dark"; }
+function serverTheme(): Theme { return "light"; }
 
 function Brand() {
   return (
     <div className="brand">
       <span className="brand-mark" aria-hidden="true">
-        <Waves size={23} />
+        <Waves size={22} />
       </span>
       <span>
         <strong>Flood<span>Insight</span></strong>
@@ -139,7 +139,7 @@ function FloodAlertBanner({ weather }: { weather: Weather[] }) {
       </div>
       <div className="flood-alert-right">
         <span style={{ fontSize: "11.5px", color: "var(--muted)" }}>
-          Cực đại tức thời: <strong style={{ color: "var(--text)" }}>{maxRain.toFixed(1)} mm/h</strong>
+          Cực đại tức thời: <strong style={{ color: "var(--heading)" }}>{maxRain.toFixed(1)} mm/h</strong>
         </span>
         <span className="pill good">
           <i /> Trực tuyến 24/7
@@ -236,10 +236,10 @@ function DashboardBody({ initialRange }: { initialRange: DateRange }) {
               className="icon-button"
               type="button"
               aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-              title={theme === "dark" ? "Chuyển chế độ Sáng" : "Chuyển chế độ Tối"}
+              title={theme === "dark" ? "Chuyển sang giao diện Sáng" : "Chuyển sang giao diện Tối"}
               onClick={() => {
-                localStorage.setItem("floodinsight-theme", theme === "dark" ? "light" : "dark");
-                window.dispatchEvent(new Event("floodinsight-theme"));
+                localStorage.setItem("floodinsight-ui-theme", theme === "dark" ? "light" : "dark");
+                window.dispatchEvent(new Event("floodinsight-ui-theme"));
               }}
             >
               {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
@@ -261,7 +261,7 @@ function DashboardBody({ initialRange }: { initialRange: DateRange }) {
             <header className="hero">
               <div className="hero-content">
                 <p className="hero-location">
-                  <MapPin size={13} /> TP. ĐÀ NẴNG • QUAN TRẮC ĐÔ THỊ THÔNG MINH
+                  <MapPin size={13} /> TP. ĐÀ NẴNG • HỆ THỐNG GIÁM SÁT & PHÂN TÍCH ĐÔ THỊ THÔNG MINH
                 </p>
                 <h1 aria-label="Environmental overview">Nền tảng Phân tích & Cảnh báo Ngập lụt Đô thị</h1>
                 <p>
@@ -270,7 +270,7 @@ function DashboardBody({ initialRange }: { initialRange: DateRange }) {
                 </p>
                 <div className="hero-actions">
                   <button type="button" className="button primary" onClick={() => go("Da Nang Map")}>
-                    Mở Bản đồ Ngập lụt <ArrowUpRight size={16} />
+                    Mở Bản đồ Ngập lụt GIS <ArrowUpRight size={16} />
                   </button>
                   <button type="button" className="button secondary" onClick={() => go("Machine Learning")}>
                     Xem Mô hình AI & Phân cụm <Sparkles size={15} />
@@ -291,16 +291,14 @@ function DashboardBody({ initialRange }: { initialRange: DateRange }) {
             <header className="section-heading">
               <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
                 <h1>{currentNav?.vietnamese ?? section}</h1>
-                <span className="pill neutral">{currentNav?.name}</span>
+                <span className="pill info">{currentNav?.name}</span>
               </div>
               <p>{currentNav?.detail}</p>
             </header>
           )}
 
-          {/* Banner Cảnh báo ngập lụt động */}
           <FloodAlertBanner weather={weather.data ?? []} />
 
-          {/* Bộ lọc thời gian & điểm trạm */}
           {section !== "Data Management" && (
             <form className="filter-bar panel" onSubmit={apply}>
               <div className="filter-field location-field">
@@ -363,7 +361,6 @@ function DashboardBody({ initialRange }: { initialRange: DateRange }) {
                 </button>
               </div>
 
-              {/* Nút Preset chọn nhanh */}
               <div className="preset-bar">
                 <span className="preset-label">Chọn nhanh:</span>
                 <button

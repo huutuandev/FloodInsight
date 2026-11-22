@@ -85,7 +85,6 @@ export function Overview({ scope, theme, points, weather, onSelect, openMap, wea
   const total = measured.length ? measured.reduce((sum, row) => sum + (row.rainfall_total_mm ?? 0), 0) : null;
   const loading = Boolean(scope.location) && rain.isPending;
 
-  // Open-Meteo Marine API: Vịnh Đà Nẵng (16.075N, 108.224E)
   const marine = useQuery({
     queryKey: ["open-meteo-marine-danang"],
     staleTime: 10 * 60 * 1000,
@@ -99,7 +98,6 @@ export function Overview({ scope, theme, points, weather, onSelect, openMap, wea
     },
   });
 
-  // Open-Meteo Soil Moisture API: Độ ẩm đất tầng mặt (0-1cm)
   const soil = useQuery({
     queryKey: ["open-meteo-soil-danang", scope.location],
     staleTime: 10 * 60 * 1000,
@@ -118,7 +116,6 @@ export function Overview({ scope, theme, points, weather, onSelect, openMap, wea
   const wavePeriod = marine.data?.current?.wave_period as number | undefined;
   const soilMoisture = soil.data?.current?.soil_moisture_0_to_1cm as number | undefined;
 
-  // Compound Flood Risk Index (0 - 100)
   const currentRain = model?.payload.values.precipitation ?? 0;
   const soilRatio = soilMoisture != null ? Math.min(1, soilMoisture / 0.5) : 0.4;
   const waveRatio = waveHeight != null ? Math.min(1, waveHeight / 2.5) : 0.3;
@@ -130,17 +127,17 @@ export function Overview({ scope, theme, points, weather, onSelect, openMap, wea
     : compoundScore >= 45
     ? { level: "Cấp 2: NGUY CƠ CAO", tone: "warn", desc: "Độ ẩm đất cao và sóng biển gây cản trở thoát nước tại các cửa sông." }
     : compoundScore >= 25
-    ? { level: "Cấp 1: CẦN THEO DÕI", tone: "neutral", desc: "Điều kiện thủy văn ổn định, dòng chảy tiêu thoát nước bình thường." }
+    ? { level: "Cấp 1: CẦN THEO DÕI", tone: "info", desc: "Điều kiện thủy văn ổn định, dòng chảy tiêu thoát nước bình thường." }
     : { level: "Cấp 0: AN TOÀN", tone: "good", desc: "Đất có khả năng thẩm thấu tốt, mực nước biển ven bờ ổn định." };
 
   return <>
     <div className="metrics-grid grid">
       <Metric title="Tổng lượng mưa lọc" value={displayNumber(total)} unit="mm" loading={loading}
-        subtitle={rain.error ? "Chưa có dữ liệu" : `${measured.length} ngày ghi nhận · ERA5`} icon={<CloudRain size={19} />} tone="teal" />
+        subtitle={rain.error ? "Chưa có dữ liệu" : `${measured.length} ngày ghi nhận · ERA5`} icon={<CloudRain size={19} />} tone="blue" />
       <Metric title="Nhiệt độ hiện tại" value={displayNumber(model?.payload.values.temperature_2m)} unit="°C"
         subtitle={weatherError ? "Mất kết nối thời tiết" : "Mô hình Open-Meteo tức thời"} icon={<Thermometer size={19} />} tone="amber" loading={weatherLoading} />
       <Metric title="Độ ẩm không khí" value={displayNumber(model?.payload.values.relative_humidity_2m)} unit="%"
-        subtitle={weatherError ? "Mất kết nối thời tiết" : "Độ ẩm tương đối tầng 2m"} icon={<Droplets size={19} />} tone="blue" loading={weatherLoading} />
+        subtitle={weatherError ? "Mất kết nối thời tiết" : "Độ ẩm tương đối tầng 2m"} icon={<Droplets size={19} />} tone="teal" loading={weatherLoading} />
       <Metric title="Sóng biển Vịnh Đà Nẵng" value={waveHeight != null ? waveHeight.toFixed(2) : "—"} unit="m"
         subtitle={wavePeriod ? `Chu kỳ sóng: ${wavePeriod}s · Marine API` : "Open-Meteo Marine (Ven vịnh)"} icon={<Waves size={19} />} tone="cyan" loading={marine.isPending} />
       <Metric title="Độ ẩm tầng đất mặt" value={soilMoisture != null ? soilMoisture.toFixed(3) : "—"} unit="m³/m³"
@@ -158,39 +155,39 @@ export function Overview({ scope, theme, points, weather, onSelect, openMap, wea
         <div className="cfi-factor">
           <div className="cfi-factor-head">
             <span>Lượng mưa đo đạc</span>
-            <strong style={{ color: "#38bdf8" }}>{displayNumber(currentRain)} mm/h</strong>
+            <strong style={{ color: "#2878B5" }}>{displayNumber(currentRain)} mm/h</strong>
           </div>
           <div className="cfi-bar-track">
-            <div className="cfi-bar-fill" style={{ width: `${rainRatio * 100}%`, background: "#38bdf8" }} />
+            <div className="cfi-bar-fill" style={{ width: `${rainRatio * 100}%`, background: "#2878B5" }} />
           </div>
-          <span style={{ fontSize: "10.5px", color: "var(--faint)", display: "block", marginTop: "6px" }}>Yếu tố kích hoạt ngập lụt trực tiếp</span>
+          <span style={{ fontSize: "10.5px", color: "var(--muted)", display: "block", marginTop: "6px" }}>Yếu tố kích hoạt ngập lụt trực tiếp</span>
         </div>
 
         <div className="cfi-factor">
           <div className="cfi-factor-head">
             <span>Độ bão hòa nước đất</span>
-            <strong style={{ color: "#2dd4bf" }}>{soilMoisture != null ? `${(soilRatio * 100).toFixed(0)}%` : "—"}</strong>
+            <strong style={{ color: "#368F91" }}>{soilMoisture != null ? `${(soilRatio * 100).toFixed(0)}%` : "—"}</strong>
           </div>
           <div className="cfi-bar-track">
-            <div className="cfi-bar-fill" style={{ width: `${soilRatio * 100}%`, background: "#2dd4bf" }} />
+            <div className="cfi-bar-fill" style={{ width: `${soilRatio * 100}%`, background: "#368F91" }} />
           </div>
-          <span style={{ fontSize: "10.5px", color: "var(--faint)", display: "block", marginTop: "6px" }}>Quyết định tỷ lệ nước ngấm hay chảy tràn</span>
+          <span style={{ fontSize: "10.5px", color: "var(--muted)", display: "block", marginTop: "6px" }}>Quyết định tỷ lệ nước ngấm hay chảy tràn</span>
         </div>
 
         <div className="cfi-factor">
           <div className="cfi-factor-head">
             <span>Sóng & Triều ven bờ</span>
-            <strong style={{ color: "#facc15" }}>{waveHeight != null ? `${waveHeight.toFixed(2)} m` : "—"}</strong>
+            <strong style={{ color: "#D98A1C" }}>{waveHeight != null ? `${waveHeight.toFixed(2)} m` : "—"}</strong>
           </div>
           <div className="cfi-bar-track">
-            <div className="cfi-bar-fill" style={{ width: `${waveRatio * 100}%`, background: "#facc15" }} />
+            <div className="cfi-bar-fill" style={{ width: `${waveRatio * 100}%`, background: "#E9A23B" }} />
           </div>
-          <span style={{ fontSize: "10.5px", color: "var(--faint)", display: "block", marginTop: "6px" }}>Tác động thoát nước tại cửa sông Hàn</span>
+          <span style={{ fontSize: "10.5px", color: "var(--muted)", display: "block", marginTop: "6px" }}>Tác động thoát nước tại cửa sông Hàn</span>
         </div>
 
         <div className="cfi-score-card">
           <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
-            <span style={{ fontSize: "24px", fontWeight: 800, color: "var(--accent)" }}>{compoundScore}</span>
+            <span style={{ fontSize: "24px", fontWeight: 800, color: "var(--heading)" }}>{compoundScore}</span>
             <span style={{ fontSize: "12px", color: "var(--muted)" }}>/ 100 điểm CFI</span>
           </div>
           <p style={{ margin: "4px 0 0", fontSize: "11.5px", color: "var(--text)" }}>{compoundStatus.desc}</p>
@@ -268,16 +265,21 @@ export function MapSection({ scope, theme, points, weather, onSelect }: AreaProp
   return <>
     <div className="map-layout grid">
       <Panel
-        title="Bản đồ không gian & Radar mây mưa Đà Nẵng"
+        title="Bản đồ không gian GIS & Radar mây mưa Đà Nẵng"
         headingLabel="Da Nang sampling map"
-        subtitle="Hiển thị lượng mưa tích lũy theo ngày kết hợp lớp phủ ảnh quét Radar RainViewer trực tiếp"
+        subtitle="Hiển thị phân vùng nguy cơ ngập theo lượng mưa kết hợp lớp phủ ảnh quét Radar RainViewer trực tiếp"
         action={<label className="checkbox"><input type="checkbox" aria-label="Selected point only" checked={onlySelected}
           onChange={(event) => setOnlySelected(event.target.checked)} />Chỉ xem trạm đã chọn</label>}
       >
         <StationMap points={visible} selected={scope.location} onSelect={onSelect} latest={latest} weather={weather} />
         <div className="map-legend" aria-label="Daily rainfall intensity legend">
-          {[["#8fa2b4", "Chưa có dữ liệu"], ["#2dd4bf", "< 10 mm (Mưa nhẹ)"], ["#f59e0b", "10–25 mm (Mưa vừa)"], ["#ef4444", "≥ 25 mm (Mưa to / Ngập)"]]
-            .map(([color, label]) => <span key={label}><i style={{ background: color }} />{label}</span>)}
+          {[
+            ["#94A3B8", "Chưa có dữ liệu"],
+            ["#299D70", "< 10 mm (Low Risk)"],
+            ["#E9A23B", "10–25 mm (Medium Risk)"],
+            ["#E67E22", "25–50 mm (High Risk)"],
+            ["#D9534F", "≥ 50 mm (Very High Risk)"],
+          ].map(([color, label]) => <span key={label}><i style={{ background: color }} />{label}</span>)}
         </div>
         {query.error && <QueryError error={query.error} retry={() => void query.refetch()} />}
       </Panel>
@@ -288,7 +290,7 @@ export function MapSection({ scope, theme, points, weather, onSelect }: AreaProp
             <MapPin size={16} /><span>{point.name}</span><span>{displayNumber(latest[point.code]?.rainfall_total_mm)} mm</span>
           </button>)}</div> : <Empty title="Không có điểm trạm quan trắc" detail="Danh sách trạm sẽ xuất hiện sau khi chạy thu thập hoặc ETL." />}
         {selected && <div className="station-detail">
-          <strong style={{ color: "var(--accent)", fontSize: "15px" }}>{selected.name}</strong>
+          <strong style={{ color: "var(--heading)", fontSize: "15px" }}>{selected.name}</strong>
           <p>Dữ liệu mô hình tức thời · {localTime(selectedWeather?.valid_at)} ICT</p>
           <dl>
             <div><dt>Nhiệt độ</dt><dd>{displayNumber(selectedWeather?.payload.values.temperature_2m)} °C</dd></div>

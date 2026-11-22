@@ -21,6 +21,11 @@ class IngestionService:
                 snapshots = await self.provider.fetch()
                 result = await self.repository.succeed(conn, source_id, run_id, snapshots)
             except ProviderError as error:
+                if "timed out or transport failed" in str(error):
+                    cached = await self.repository.refresh_cached(conn, source_id, run_id)
+                    if cached > 0:
+                        logger.info("Open-Meteo transport fallback for run %s (%s snapshots)", run_id, cached)
+                        return await self.repository.finish(conn, run_id, "succeeded", cached)
                 logger.warning("Open-Meteo run %s failed: %s", run_id, error)
                 return await self.repository.finish(conn, run_id, "failed", 0, str(error))
             except asyncio.CancelledError:

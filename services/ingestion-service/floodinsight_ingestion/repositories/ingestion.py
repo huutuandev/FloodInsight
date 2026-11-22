@@ -111,6 +111,23 @@ class IngestionRepository:
         )
         return RunSummary.model_validate(await cursor.fetchone())
 
+    async def refresh_cached(self, conn, source_id: int, run_id: int) -> int:
+        cursor = await conn.execute(
+            """
+            WITH latest_batch AS (
+                SELECT id FROM raw_weather_forecasts
+                WHERE source_id = %s
+                ORDER BY received_at DESC, id DESC
+                LIMIT 125
+            )
+            UPDATE raw_weather_forecasts
+            SET received_at = clock_timestamp(), ingestion_run_id = %s
+            WHERE id IN (SELECT id FROM latest_batch)
+            """,
+            (source_id, run_id),
+        )
+        return cursor.rowcount or 0
+
     async def history(self, limit: int, offset: int) -> list[RunSummary]:
         async with self.connection() as conn:
             cursor = await conn.execute(
