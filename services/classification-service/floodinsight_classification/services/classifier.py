@@ -1,3 +1,5 @@
+from typing import Literal
+
 import numpy as np
 from pydantic import BaseModel, Field, model_validator
 from sklearn.ensemble import RandomForestClassifier
@@ -32,9 +34,17 @@ def classification_metrics(actual, predicted):
     p, r, f, support = precision_recall_fscore_support(
         actual, predicted, labels=labels, zero_division=0,
     )
+    actual = np.asarray(actual)
+    predicted = np.asarray(predicted)
+    majority_count = int(np.bincount(actual, minlength=len(CLASSES)).max())
     return {
+        "accuracy": float(np.mean(actual == predicted)),
         "precision_macro": float(np.mean(p)), "recall_macro": float(np.mean(r)),
         "f1_macro": float(np.mean(f)),
+        "majority_baseline": {
+            "accuracy": float(majority_count / len(actual)) if len(actual) else 0.0,
+            "label": CLASSES[int(np.bincount(actual, minlength=len(CLASSES)).argmax())],
+        },
         "per_class": {
             label: {"precision": float(p[i]), "recall": float(r[i]),
                     "f1": float(f[i]), "support": int(support[i])}
@@ -44,7 +54,11 @@ def classification_metrics(actual, predicted):
     }
 
 
-def train_classifier(parts, thresholds):
+def train_classifier(
+    parts,
+    thresholds,
+    class_weight: Literal["balanced_subsample", "balanced"] = "balanced_subsample",
+):
     train = parts["train"]
     labels = rainfall_labels(train["target"], thresholds)
     training_counts = np.bincount(labels, minlength=len(CLASSES))
@@ -52,7 +66,7 @@ def train_classifier(parts, thresholds):
         raise DataUnavailable("The training partition must contain all four configured rainfall classes")
     model = make_pipeline(
         SimpleImputer(strategy="median"),
-        RandomForestClassifier(n_estimators=200, min_samples_leaf=3, class_weight="balanced_subsample",
+        RandomForestClassifier(n_estimators=200, min_samples_leaf=3, class_weight=class_weight,
                                random_state=42, n_jobs=2),
     )
     model.fit(train[FEATURES].astype(float), labels)

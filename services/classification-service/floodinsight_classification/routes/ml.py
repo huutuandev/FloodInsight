@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Request
 from pydantic import Field
@@ -17,6 +17,7 @@ router = APIRouter(prefix="/classification", tags=["rainfall intensity classific
 
 class TrainingRequest(DailyTraining):
     thresholds: Thresholds = Field(default_factory=Thresholds)
+    class_weight: Literal["balanced_subsample", "balanced"] = "balanced_subsample"
 
 
 def registry(request):
@@ -27,7 +28,7 @@ def registry(request):
 @warehouse_errors
 def train(payload: TrainingRequest, request: Request):
     parts = training_partitions(payload)
-    artifact, splits, metrics = train_classifier(parts, payload.thresholds)
+    artifact, splits, metrics = train_classifier(parts, payload.thresholds, payload.class_weight)
     return registry(request).save(artifact, {
         "scope": payload.model_dump(mode="json"), "source": SOURCE, "features": FEATURES,
         "locations": sorted(parts["train"].location.unique().tolist()), "splits": splits,

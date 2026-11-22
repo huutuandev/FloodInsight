@@ -61,6 +61,26 @@ The forest reduced test RMSE and had higher test MAE. This sample does not show 
 
 Training class counts were 8 No Rain, 107 Light Rain, 18 Moderate Rain, and 15 Heavy Rain. The classifier predicted Light Rain for every held-out day. The test confusion matrix was `[[0,15,0,0],[0,32,0,0],[0,4,0,0],[0,1,0,0]]`. Recall was zero for No Rain, Moderate Rain, and Heavy Rain. The tests verified persistence and inference behavior. The measured classifier does not distinguish intensity classes reliably on this sample.
 
+## Thử nghiệm ngưỡng KTTV và cân bằng lớp
+
+This is an experiment only. The 0.1/10/25 mm project thresholds remain the defaults. The existing production behavior uses Random Forest `balanced_subsample`; the API now accepts `class_weight="balanced"` explicitly. Every run below uses the retrospective availability mode for 2024-01-01 through 2025-12-31.
+
+| Case | Thresholds (No Rain / Light / Moderate / Heavy) | Accuracy | Macro F1 | No Rain recall | Light recall | Moderate recall | Heavy recall | Majority baseline |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Default thresholds, balanced_subsample | 0.1 / 10 / 25 mm | 56.25% | 0.383435 | 0.500000 | 0.804598 | 0.068966 | 0.272727 | 60.42% |
+| Default thresholds, balanced | 0.1 / 10 / 25 mm | 54.17% | 0.399863 | 0.500000 | 0.735632 | 0.137931 | 0.318182 | 60.42% |
+| KTTV thresholds, balanced_subsample | 0.1 / 16 / 50 mm | 61.81% | 0.256067 | 0.166667 | 0.877551 | 0.068966 | 0.000000 | 68.06% |
+| KTTV thresholds, balanced | 0.1 / 16 / 50 mm | 60.42% | 0.301231 | 0.333333 | 0.816327 | 0.172414 | 0.000000 | 68.06% |
+
+The 2024-2025 training class counts were:
+
+| Case thresholds | No Rain | Light Rain | Moderate Rain | Heavy Rain |
+| --- | ---: | ---: | ---: | ---: |
+| 0.1 / 10 / 25 mm | 455 | 1245 | 265 | 145 |
+| 0.1 / 16 / 50 mm | 455 | 1370 | 245 | 40 |
+
+Sources for the experimental thresholds: the National Centre for Hydro-Meteorological Forecasting WMO rain classification (moderate rain 16-50 mm/24h, heavy rain >50 mm/24h) and the Daibieunhandan.vn article "Hỏi - đáp về các hiện tượng khí tượng thủy văn". The KTTV grouping was used only in training/evaluation and does not change the documented project defaults.
+
 ## Testing
 
 Run `python -m pytest` after installing `requirements-dev.txt` from each service directory. The database tests are opt-in with `FLOODINSIGHT_RUN_ML_DB_TESTS=1` on a disposable database named `floodinsight_ml_test`. Populate the benchmark dates above and the current seven eligible lag dates for Hải Châu via the historical warehouse API. Each suite checks that deleting its stored results and reissuing inference restores them from the same model. All nine ML service tests passed. All three trained models also served after their containers were recreated. The workspace export at `artifacts/ml-benchmark/` contains the three fitted Joblib files and a SHA-256-verified metrics manifest. These local benchmark files are ignored by Git. Deployment model volumes and registry entries are created through the training API.
