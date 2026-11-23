@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from pydantic import ValidationError
 
+# pyrefly: ignore[missing-import]
 from ..schemas.historical import ArchiveResponse, VARIABLES
 
 VIETNAM = ZoneInfo("Asia/Ho_Chi_Minh")
@@ -28,6 +29,10 @@ POINTS = (
     SamplingPoint("lien-chieu", "Liên Chiểu", 16.07272, 108.15815),
     SamplingPoint("cam-le", "Cẩm Lệ", 16.0153, 108.2013),
     SamplingPoint("ngu-hanh-son", "Ngũ Hành Sơn", 16.008333, 108.2525),
+    SamplingPoint("son-tra", "Sơn Trà", 16.1011, 108.2612),
+    SamplingPoint("hoa-vang", "Hòa Vang (Hòa Phong)", 15.9867, 108.1408),
+    SamplingPoint("hoa-bac", "Hòa Vang (Hòa Bắc)", 16.1472, 108.0167),
+    SamplingPoint("hoa-khuong", "Hòa Vang (Hòa Khương)", 15.9458, 108.1069),
 )
 
 
