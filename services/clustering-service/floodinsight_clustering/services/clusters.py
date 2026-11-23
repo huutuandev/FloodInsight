@@ -12,22 +12,53 @@ from floodinsight_ml.storage import DataUnavailable
 FEATURES = ["rainfall", "intensity", "rainy_hours", "humidity", "temperature", "wind"]
 
 
-def train_clusters(rows, clusters):
+def train_clusters(rows, clusters=3, scan_k=False):
     values = pd.DataFrame(rows, columns=FEATURES).astype(float)
-    if len(values) <= clusters or values.isna().all().any():
+    if len(values) <= 2 or values.isna().all().any():
         raise DataUnavailable("Provide more complete-rain days than clusters and data for every feature")
     preprocessing = Pipeline([("imputer", SimpleImputer(strategy="median")), ("scale", StandardScaler())])
     scaled = preprocessing.fit_transform(values)
-    if len(np.unique(scaled, axis=0)) < clusters:
+
+    scan_scores = None
+    selected_clusters = clusters
+    if scan_k:
+        scan_scores = {}
+        distinct_periods = len(np.unique(scaled, axis=0))
+        for k in range(2, 7):
+            if k >= len(values) or k > distinct_periods:
+                continue
+            candidate = KMeans(n_clusters=k, n_init=20, random_state=42).fit(scaled)
+            if len(set(candidate.labels_)) < 2:
+                continue
+            sample = min(len(values), 5000)
+            try:
+                score = float(silhouette_score(
+                    scaled, candidate.labels_,
+                    sample_size=sample if sample < len(values) else None,
+                    random_state=42,
+                ))
+            except ValueError:
+                continue
+            scan_scores[str(k)] = score
+        if not scan_scores:
+            raise DataUnavailable("No valid cluster counts could be evaluated")
+        selected_clusters = int(max(scan_scores, key=scan_scores.get))
+    if len(values) <= selected_clusters:
+        raise DataUnavailable("Provide more complete-rain days than clusters")
+    if len(np.unique(scaled, axis=0)) < selected_clusters:
         raise DataUnavailable("There are too few distinct weather periods for this cluster count")
-    model = KMeans(n_clusters=clusters, n_init=20, random_state=42).fit(scaled)
+    model = KMeans(n_clusters=selected_clusters, n_init=20, random_state=42).fit(scaled)
     if len(set(model.labels_)) < 2:
         raise DataUnavailable("Clustering produced fewer than two distinct groups")
     pca = PCA(n_components=2).fit(scaled)
     sample = min(len(values), 5000)
     # Seeded sampling may omit a tiny cluster, so require a defined sampled score.
     try:
-        score = float(silhouette_score(scaled, model.labels_, sample_size=sample, random_state=42))
+        score = float(silhouette_score(
+            scaled, model.labels_,
+            sample_size=sample if sample < len(values) else None,
+            random_state=42,
+        ))
     except ValueError as exc:
         raise DataUnavailable("Could not evaluate the silhouette on the available groups") from exc
     stats = []
@@ -39,6 +70,9 @@ def train_clusters(rows, clusters):
         })
     return {"preprocessing": preprocessing, "model": model, "pca": pca}, {
         "samples": len(values), "silhouette_score": score, "silhouette_sample_size": sample,
+        "requested_clusters": clusters,
+        "selected_clusters": selected_clusters,
+        "silhouette_scores": scan_scores,
         "pca_explained_variance": pca.explained_variance_ratio_.tolist(),
         "cluster_statistics": stats, "features": FEATURES,
     }

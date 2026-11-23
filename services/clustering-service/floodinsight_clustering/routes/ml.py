@@ -16,6 +16,7 @@ router = APIRouter(prefix="/clustering", tags=["clustering"])
 
 class TrainRequest(Window):
     clusters: Annotated[int, Field(ge=2, le=12)] = 3
+    scan_k: bool = False
 
 
 def registry(request):
@@ -25,7 +26,7 @@ def registry(request):
 @router.post("/train")
 @warehouse_errors
 def train(payload: TrainRequest, request: Request):
-    artifact, metrics = train_clusters(daily_features(payload), payload.clusters)
+    artifact, metrics = train_clusters(daily_features(payload), payload.clusters, payload.scan_k)
     return registry(request).save(artifact, {
         "scope": payload.model_dump(mode="json"), "source": SOURCE, "metrics": metrics,
     })
