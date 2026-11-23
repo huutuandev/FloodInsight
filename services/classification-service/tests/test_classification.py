@@ -8,6 +8,7 @@ from floodinsight_classification.main import app
 from floodinsight_classification.routes.ml import TrainingRequest
 from floodinsight_classification.services.classifier import (
     CLASSES,
+    THREE_CLASSES,
     Thresholds,
     classification_metrics,
     rainfall_labels,
@@ -23,6 +24,15 @@ def test_class_thresholds_are_ordered_and_lower_inclusive():
     assert rainfall_labels([1.0], Thresholds(light_mm=2)).tolist() == [0]
     with pytest.raises(ValidationError):
         Thresholds(moderate_mm=25, heavy_mm=10)
+
+
+def test_three_class_option_is_fixed_and_default_is_four_classes():
+    assert rainfall_labels([0, 0.1, 15.99, 16], Thresholds(), True).tolist() == [0, 1, 1, 2]
+    assert TrainingRequest(
+        start_date="2024-01-01", end_date="2025-12-31",
+    ).three_classes is False
+    metrics = classification_metrics([0, 1, 2], [0, 1, 1], THREE_CLASSES)
+    assert set(metrics["per_class"]) == set(THREE_CLASSES)
 
 
 def test_classification_metrics_include_accuracy_and_majority_baseline():
