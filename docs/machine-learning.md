@@ -81,6 +81,42 @@ The 2024-2025 training class counts were:
 
 Sources for the experimental thresholds: the National Centre for Hydro-Meteorological Forecasting WMO rain classification (moderate rain 16-50 mm/24h, heavy rain >50 mm/24h) and the Daibieunhandan.vn article "Hỏi - đáp về các hiện tượng khí tượng thủy văn". The KTTV grouping was used only in training/evaluation and does not change the documented project defaults.
 
+## Thử nghiệm gộp 3 lớp
+
+The optional `three_classes=true` mode uses fixed boundaries: No Rain `<0.1 mm`, Light Rain `0.1` to `<16 mm`, and Moderate+ `>=16 mm`; it is disabled by default and does not change the 4-class thresholds. Both runs used Hải Châu, retrospective availability, and 2024-01-01 through 2025-12-31. The test split below has 144 samples.
+
+| Case | Accuracy | Macro F1 | No Rain recall | Light recall | Moderate+ recall | Train counts (No/Light/Moderate+) | Majority baseline |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| balanced_subsample | 63.89% | 0.520290 | 33.33% (6) | 74.49% (98) | 42.50% (40) | 91 / 274 / 57 | 68.06% |
+| balanced | 52.08% | 0.436456 | 33.33% (6) | 48.98% (98) | 62.50% (40) | 91 / 274 / 57 | 68.06% |
+
+`balanced_subsample` was better on test accuracy and macro F1 in this run, but both models remained below the 68.06% majority baseline. `balanced` improved Moderate+ recall at the cost of Light Rain recall and accuracy. These 3-class results are experimental; the default API remains 4 classes.
+
+## Thử nghiệm quét cụm k
+
+The clustering API keeps `clusters=3` as its default and accepts `scan_k=true` to evaluate `k=2..6`. For the 2024-01-01 through 2025-12-31 Hải Châu window, 731 complete samples were used.
+
+| k | Silhouette |
+| ---: | ---: |
+| 2 | 0.370919 |
+| 3 | 0.298500 |
+| 4 | 0.295438 |
+| 5 | 0.282499 |
+| 6 | 0.276925 |
+
+The best result was `k=2`. Its cluster means were:
+
+| Cluster | Days | Rainfall (mm) | Rain intensity (mm/h) | Rainy hours | Humidity (%) | Temperature (C) | Wind (m/s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 537 | 2.277 | 0.276 | 5.559 | 80.712 | 27.653 | 2.250 |
+| 1 | 194 | 23.201 | 1.044 | 21.933 | 87.083 | 24.360 | 3.780 |
+
+Cluster 1 represents wetter, more humid, and rainier periods; Cluster 0 represents predominantly dry/light-rain periods. The scan does not change the default `k=3`.
+
+## Giới hạn đặc trưng
+
+Supervised features start at target day minus 8 (`D-8`) to enforce the data availability/embargo design. Consequently, classification and prediction mainly learn from lagged rainfall and weather patterns plus seasonality, not the latest 1-3 recorded days. This limits next-day forecasting to evidence available before D-7 and makes seasonal persistence a major competing signal; adding D-1 to D-3 is not implemented here.
+
 ## Testing
 
 Run `python -m pytest` after installing `requirements-dev.txt` from each service directory. The database tests are opt-in with `FLOODINSIGHT_RUN_ML_DB_TESTS=1` on a disposable database named `floodinsight_ml_test`. Populate the benchmark dates above and the current seven eligible lag dates for Hải Châu via the historical warehouse API. Each suite checks that deleting its stored results and reissuing inference restores them from the same model. All nine ML service tests passed. All three trained models also served after their containers were recreated. The workspace export at `artifacts/ml-benchmark/` contains the three fitted Joblib files and a SHA-256-verified metrics manifest. These local benchmark files are ignored by Git. Deployment model volumes and registry entries are created through the training API.
