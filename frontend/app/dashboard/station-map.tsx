@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { GeoJsonObject } from "geojson";
 import { CircleMarker, GeoJSON, MapContainer, Popup, TileLayer, useMap } from "react-leaflet";
 import { latLngBounds } from "leaflet";
+import { Radio } from "lucide-react";
 import type { Location, Rain, Weather } from "./data";
 import { displayNumber, localTime } from "./data";
 import "leaflet/dist/leaflet.css";
@@ -15,10 +16,15 @@ export type Markers = {
 };
 const center: [number, number] = [16.047, 108.205];
 
-export const rainColors = ["#8fa2b4", "#30baad", "#f3bf62", "#f47d82"];
+// GIS Flood Risk Colors: No data (slate), Low (green), Medium (yellow), High (orange), Very High (red)
+export const rainColors = ["#94A3B8", "#299D70", "#E9A23B", "#E67E22", "#D9534F"];
 export function rainfallColor(rain?: Rain) {
   const value = rain?.rainfall_total_mm;
-  return rainColors[value == null ? 0 : value < 10 ? 1 : value < 25 ? 2 : 3];
+  if (value == null) return rainColors[0];
+  if (value < 10) return rainColors[1];
+  if (value < 25) return rainColors[2];
+  if (value < 50) return rainColors[3];
+  return rainColors[4];
 }
 
 function View({ points, selected, compact }: Pick<Markers, "points" | "selected" | "compact">) {
@@ -39,8 +45,47 @@ function View({ points, selected, compact }: Pick<Markers, "points" | "selected"
   return null;
 }
 
+type RainViewerResponse = {
+  version: string;
+  generated: number;
+  host: string;
+  radar: {
+    past: { time: number; path: string }[];
+    nowcast: { time: number; path: string }[];
+  };
+};
+
 export default function StationMap({ points, selected, onSelect, latest, weather, compact }: Markers) {
   const [tileError, setTileError] = useState(false);
+  const [radarEnabled, setRadarEnabled] = useState(true);
+
+  const radar = useQuery<RainViewerResponse>({
+    queryKey: ["rainviewer-weather-maps"],
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+    queryFn: async ({ signal }) => {
+      const res = await fetch("https://api.rainviewer.com/public/weather-maps.json", { signal });
+      if (!res.ok) throw new Error("RainViewer API unavailable");
+      return await res.json();
+    },
+  });
+
+  const latestRadarFrame = useMemo(() => {
+    if (!radar.data?.radar?.past?.length) return null;
+    return radar.data.radar.past[radar.data.radar.past.length - 1];
+  }, [radar.data]);
+
+  const radarTileUrl = useMemo(() => {
+    if (!radar.data?.host || !latestRadarFrame?.path) return null;
+    return `${radar.data.host}${latestRadarFrame.path}/256/{z}/{x}/{y}/2/1_1.png`;
+  }, [radar.data, latestRadarFrame]);
+
+  const radarTimeStr = useMemo(() => {
+    if (!latestRadarFrame?.time) return null;
+    const date = new Date(latestRadarFrame.time * 1000);
+    return date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" });
+  }, [latestRadarFrame]);
+
   const coast = useQuery({
     queryKey: ["da-nang-coastline"],
     enabled: tileError,
@@ -51,35 +96,114 @@ export default function StationMap({ points, selected, onSelect, latest, weather
       return await response.json() as GeoJsonObject;
     },
   });
-  return <div className={compact ? "map-frame compact-map" : "map-frame full-map"}>
-    {tileError && <span className="tile-note">{coast.data ? "Offline coastline · Natural Earth" : "Basemap tiles unavailable"}</span>}
-    <MapContainer center={center} zoom={12} scrollWheelZoom={false} zoomControl={!compact} zoomAnimation={false} fadeAnimation={false} markerZoomAnimation={false}>
-      <TileLayer url={process.env.NEXT_PUBLIC_OSM_TILE_URL || "https://tile.openstreetmap.org/{z}/{x}/{y}.png"}
-        maxZoom={19} attribution={'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}
-        eventHandlers={{ tileerror: () => setTileError(true), tileload: () => setTileError(false) }} />
-      {tileError && coast.data && <GeoJSON data={coast.data} style={{
-        className: "offline-coastline", color: "#71a5bb", weight: 2, opacity: .84, interactive: false,
-      }} />}
-      <View points={points} selected={selected} compact={compact} />
-      {points.map((point) => {
-        const rain = latest[point.code];
-        const now = weather.find((entry) => entry.location_code === point.code);
-        const color = rainfallColor(rain);
-        return <CircleMarker key={point.code} center={[point.latitude, point.longitude]}
-          eventHandlers={{ click: () => onSelect(point.code) }}
-          radius={selected === point.code ? 11 : 8}
-          pathOptions={{ color: "#fff", weight: 2, fillColor: color, fillOpacity: 1 }}>
-          <Popup autoPan={false}>
-            <strong className="popup-name">{point.name}</strong>
-            <div>Daily rainfall: {displayNumber(rain?.rainfall_total_mm)} mm</div>
-            {rain && <div>{rain.period_start} · {rain.rainfall_hours}/{rain.expected_hours} h covered</div>}
-            <div>Modeled temperature: {displayNumber(now?.payload.values.temperature_2m)} °C</div>
-            <div>Modeled humidity: {displayNumber(now?.payload.values.relative_humidity_2m)}%</div>
-            {now && <small>{localTime(now.valid_at)} ICT</small>}
-          </Popup>
-        </CircleMarker>;
-      })}
-    </MapContainer>
-  </div>;
-}
 
+  return (
+    <div className={compact ? "map-frame compact-map" : "map-frame full-map"}>
+      {tileError && <span className="tile-note">{coast.data ? "Offline coastline · Natural Earth" : "Basemap tiles unavailable"}</span>}
+
+      {!compact && (
+        <div className="radar-overlay-controls" role="region" aria-label="RainViewer live radar control">
+          <div className="radar-header">
+            <span className="radar-title">
+              <span className="radar-pulse-dot" />
+              <Radio size={13} />
+              Radar Mây Mưa
+            </span>
+            <button
+              type="button"
+              className={`radar-toggle-btn ${radarEnabled ? "active" : ""}`}
+              onClick={() => setRadarEnabled(!radarEnabled)}
+              title={radarEnabled ? "Tắt lớp phủ Radar" : "Bật lớp phủ Radar"}
+            >
+              {radarEnabled ? "Đang bật" : "Tắt"}
+            </button>
+          </div>
+
+          {radarEnabled && (
+            <>
+              <div className="radar-meta">
+                <span>Nguồn: RainViewer GIS</span>
+                <span>{radarTimeStr ? `Quét: ${radarTimeStr} ICT` : "Đang cập nhật..."}</span>
+              </div>
+              <div className="radar-scale">
+                <div className="radar-scale-bar" />
+                <div className="radar-scale-labels">
+                  <span>Thấp</span>
+                  <span>Trung bình</span>
+                  <span>Cao</span>
+                  <span>Rất cao</span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      <MapContainer
+        center={center}
+        zoom={12}
+        scrollWheelZoom={false}
+        zoomControl={!compact}
+        zoomAnimation={false}
+        fadeAnimation={false}
+        markerZoomAnimation={false}
+      >
+        <TileLayer
+          url={process.env.NEXT_PUBLIC_OSM_TILE_URL || "https://tile.openstreetmap.org/{z}/{x}/{y}.png"}
+          maxZoom={19}
+          attribution={'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}
+          eventHandlers={{ tileerror: () => setTileError(true), tileload: () => setTileError(false) }}
+        />
+
+        {radarEnabled && radarTileUrl && (
+          <TileLayer
+            key={radarTileUrl}
+            url={radarTileUrl}
+            opacity={0.62}
+            zIndex={400}
+            attribution={'Radar &copy; <a href="https://www.rainviewer.com/api.html">RainViewer</a>'}
+          />
+        )}
+
+        {tileError && coast.data && (
+          <GeoJSON
+            data={coast.data}
+            style={{
+              className: "offline-coastline",
+              color: "#2878B5",
+              weight: 2,
+              opacity: 0.85,
+              interactive: false,
+            }}
+          />
+        )}
+
+        <View points={points} selected={selected} compact={compact} />
+
+        {points.map((point) => {
+          const rain = latest[point.code];
+          const now = weather.find((entry) => entry.location_code === point.code);
+          const color = rainfallColor(rain);
+          return (
+            <CircleMarker
+              key={point.code}
+              center={[point.latitude, point.longitude]}
+              eventHandlers={{ click: () => onSelect(point.code) }}
+              radius={selected === point.code ? 11 : 8}
+              pathOptions={{ color: "#17365D", weight: 2, fillColor: color, fillOpacity: 0.95 }}
+            >
+              <Popup autoPan={false}>
+                <strong className="popup-name" style={{ fontSize: "14px" }}>{point.name}</strong>
+                <div>Lượng mưa 24h: <strong>{displayNumber(rain?.rainfall_total_mm)} mm</strong></div>
+                {rain && <div style={{ fontSize: "11px", opacity: 0.8 }}>{rain.period_start} · {rain.rainfall_hours}/{rain.expected_hours}h ghi nhận</div>}
+                <div>Nhiệt độ quan trắc: <strong>{displayNumber(now?.payload.values.temperature_2m)} °C</strong></div>
+                <div>Độ ẩm không khí: <strong>{displayNumber(now?.payload.values.relative_humidity_2m)}%</strong></div>
+                {now && <small style={{ display: "block", marginTop: "4px", color: "#64748B" }}>{localTime(now.valid_at)} ICT</small>}
+              </Popup>
+            </CircleMarker>
+          );
+        })}
+      </MapContainer>
+    </div>
+  );
+}
