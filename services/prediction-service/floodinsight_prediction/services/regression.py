@@ -11,6 +11,13 @@ def errors(actual, predicted):
             "rmse_mm": float(root_mean_squared_error(actual, predicted))}
 
 
+def climatology_predictions(train, split):
+    monthly = train.assign(month=train["target_date"].map(lambda value: value.month)).groupby("month")["target"].mean()
+    fallback = float(train["target"].mean())
+    predictions = split["target_date"].map(lambda value: value.month).map(monthly).fillna(fallback).astype(float)
+    return predictions
+
+
 def train_regressor(parts):
     train = parts["train"]
     model = make_pipeline(
@@ -24,6 +31,7 @@ def train_regressor(parts):
         metrics[name] = {
             "random_forest": errors(split["target"], model.predict(split[FEATURES].astype(float))),
             "lag_8_persistence": errors(split["target"], split["rain_d8"]),
+            "month_climatology": errors(split["target"], climatology_predictions(train, split)),
         }
     return model, split_metadata(parts), metrics
 

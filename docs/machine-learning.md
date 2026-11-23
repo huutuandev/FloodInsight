@@ -54,6 +54,18 @@ Both retrospective supervised models used the following partitions after the lag
 
 The forest reduced test RMSE and had higher test MAE. This sample does not show a consistent improvement over persistence.
 
+## 2024-2025 retrospective retrain
+
+This run used Hải Châu, retrospective availability, and 2024-01-01 through 2025-12-31. The monthly climatology baseline was fitted only on training targets and predicts the mean target rainfall for that calendar month, with the train mean fallback for unseen months.
+
+| Regression | Validation MAE | Validation RMSE | Test MAE | Test RMSE |
+| --- | ---: | ---: | ---: | ---: |
+| Random forest | 6.037363 mm | 17.564344 mm | 13.181860 mm | 20.021191 mm |
+| Lag-8 persistence | 8.057778 mm | 24.909186 mm | 19.400000 mm | 28.687889 mm |
+| Monthly climatology | 4.888148 mm | 17.193459 mm | 13.924185 mm | 20.595251 mm |
+
+On validation, climatology had the lowest MAE and RMSE. On test, the random forest had the lowest MAE and RMSE, while lag-8 was worse on both metrics. This run shows that the model improved on the two baselines on test data, but climatology remained close to the model and was slightly better on validation.
+
 | Classification | Macro precision | Macro recall | Macro F1 |
 | --- | ---: | ---: | ---: |
 | Validation | 0.1364 | 0.2500 | 0.1765 |

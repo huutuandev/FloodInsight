@@ -7,8 +7,21 @@ from fastapi.testclient import TestClient
 from floodinsight_ml.daily import LAGS, lag_features
 from floodinsight_ml.storage import DatabaseSettings, connect
 from floodinsight_prediction.main import app
+from floodinsight_prediction.services.regression import climatology_predictions
 
 WINDOW = {"location": "hai-chau", "start_date": "2023-06-01", "end_date": "2024-02-29"}
+
+
+def test_climatology_is_fit_only_on_training_data():
+    train = pytest.importorskip("pandas").DataFrame({
+        "target_date": [date(2024, 1, 10), date(2024, 1, 20), date(2024, 2, 10)],
+        "target": [1.0, 3.0, 8.0],
+    })
+    split = pytest.importorskip("pandas").DataFrame({
+        "target_date": [date(2024, 1, 25), date(2024, 2, 25), date(2024, 3, 25)],
+    })
+    predicted = climatology_predictions(train, split)
+    assert predicted.tolist() == [2.0, 8.0, 4.0]
 
 
 def test_features_exclude_unavailable_or_missing_archive_days():
