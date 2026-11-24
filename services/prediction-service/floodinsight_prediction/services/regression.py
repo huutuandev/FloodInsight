@@ -18,20 +18,54 @@ def climatology_predictions(train, split):
     return predictions
 
 
-def train_regressor(parts):
+def monthly_climatology(train):
+    monthly = train.assign(month=train["target_date"].map(lambda value: value.month)).groupby("month")["target"].mean()
+    return monthly.to_dict(), float(train["target"].mean())
+
+
+def residual_predictions(model, train, split):
+    monthly, fallback = monthly_climatology(train)
+    climate = split["target_date"].map(lambda value: monthly.get(value.month, fallback)).astype(float)
+    residual = model.predict(split[FEATURES].astype(float))
+    return (climate + residual).clip(lower=0)
+
+
+def train_regressor(parts, residual_on_climatology=False, simple_tree=False):
     train = parts["train"]
+    monthly, fallback = monthly_climatology(train)
+    if residual_on_climatology:
+        train_target = train["target"] - train["target_date"].map(lambda value: monthly.get(value.month, fallback)).astype(float)
+    else:
+        train_target = train["target"]
+    forest_options = {"n_estimators": 200, "random_state": 42, "n_jobs": 2}
+    if simple_tree:
+        forest_options.update(max_depth=5, min_samples_leaf=10)
+    else:
+        forest_options.update(min_samples_leaf=3)
     model = make_pipeline(
         SimpleImputer(strategy="median"),
-        RandomForestRegressor(n_estimators=200, min_samples_leaf=3, random_state=42, n_jobs=2),
+        RandomForestRegressor(**forest_options),
     )
-    model.fit(train[FEATURES].astype(float), train["target"])
+    model.fit(train[FEATURES].astype(float), train_target)
+    model.residual_on_climatology = residual_on_climatology
+    model.monthly_climatology = monthly
+    model.monthly_climatology_fallback = fallback
+    model.simple_tree = simple_tree
     metrics = {}
     for name in ("validation", "test"):
         split = parts[name]
+        climate = climatology_predictions(train, split)
+        if residual_on_climatology:
+            predicted = residual_predictions(model, train, split).clip(lower=0)
+        else:
+            predicted = model.predict(split[FEATURES].astype(float))
+        model_name = "residual_climatology_simple_tree" if residual_on_climatology and simple_tree else (
+            "residual_climatology" if residual_on_climatology else "random_forest"
+        )
         metrics[name] = {
-            "random_forest": errors(split["target"], model.predict(split[FEATURES].astype(float))),
+            model_name: errors(split["target"], predicted),
             "lag_8_persistence": errors(split["target"], split["rain_d8"]),
-            "month_climatology": errors(split["target"], climatology_predictions(train, split)),
+            "month_climatology": errors(split["target"], climate),
         }
     return model, split_metadata(parts), metrics
 

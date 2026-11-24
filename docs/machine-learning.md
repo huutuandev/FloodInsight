@@ -78,6 +78,20 @@ The pooled model omitted `location`, training 2024-01-01 through 2025-12-31 acro
 
 The pooled test split had 1,296 samples; climatology was close to the random forest and had 0.361554 mm lower test MAE, while the random forest had 1.770336 mm lower test RMSE. The random forest outperformed lag-8 on test MAE and RMSE. On validation, climatology had the lowest MAE and RMSE.
 
+## Pooled residual and simple-tree experiments
+
+Three pooled 9-location cases used 2024-01-01 through 2025-12-31 with retrospective availability. Residual targets were real rainfall minus train-fitted monthly climatology, and residual predictions were clipped to zero. The simple residual forest used `max_depth=5` and `min_samples_leaf=10`; parameters were compared on validation only.
+
+| Case | Validation MAE | Validation RMSE | Test MAE | Test RMSE |
+| --- | ---: | ---: | ---: | ---: |
+| Default Random Forest | 7.274157 mm | 18.635214 mm | 14.691558 mm | 23.590159 mm |
+| Residual on climatology | 6.440924 mm | 18.190725 mm | 14.243024 mm | 23.456535 mm |
+| Residual + simple tree | 5.714837 mm | 17.914736 mm | 14.925594 mm | 22.889526 mm |
+| Lag-8 persistence | 8.822305 mm | 25.762162 mm | 19.909336 mm | 30.177952 mm |
+| Monthly climatology | 5.691407 mm | 17.836064 mm | 14.330004 mm | 21.818623 mm |
+
+The residual + simple tree was the best validation model among the three ML cases, but it did not beat monthly climatology; climatology had 0.023430 mm lower validation MAE and 0.078672 mm lower validation RMSE. No alternative beat climatology on validation. The test values are reported for completeness and were not used for parameter selection.
+
 | Classification | Macro precision | Macro recall | Macro F1 |
 | --- | ---: | ---: | ---: |
 | Validation | 0.1364 | 0.2500 | 0.1765 |
