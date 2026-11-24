@@ -28,6 +28,10 @@ export type Classification = {
   location: string; target_date: string; issued_at: string; label: string;
   confidence: number | null; probabilities: Record<string, number>;
 };
+export type ProviderForecast = {
+  location: string; source: string; valid_at: string; issued_at: string | null;
+  received_at: string; payload: { model?: string; values?: Record<string, number | null> };
+};
 export type Evaluation = {
   version: string;
   scope?: { availability?: string };
@@ -135,10 +139,10 @@ export type RainfallCoverage = { location: string; source: string; first_date: s
 
 export function recentCoveredRange(coverage: RainfallCoverage | undefined, fallback: DateRange): DateRange {
   if (!coverage) return fallback;
-  const first = new Date(coverage.last_date + "T00:00:00Z");
-  first.setUTCDate(first.getUTCDate() - 29);
+  // Default to full coverage history so users have complete historical visibility,
+  // falling back to a generous 365-day window if first_date is not defined.
   return {
-    start_date: [coverage.first_date, first.toISOString().slice(0, 10)].sort()[1],
-    end_date: coverage.last_date,
+    start_date: coverage.first_date || fallback.start_date,
+    end_date: coverage.last_date || fallback.end_date,
   };
 }

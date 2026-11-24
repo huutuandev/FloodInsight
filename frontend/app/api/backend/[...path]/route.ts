@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 
 const reads = new Set([
-  "locations", "weather/latest", "rainfall/coverage", "rainfall/daily", "rainfall/weekly", "rainfall/monthly",
+  "locations", "weather/latest", "weather/forecasts", "rainfall/coverage", "rainfall/daily", "rainfall/weekly", "rainfall/monthly",
   "analytics", "clustering/results", "clustering/metrics", "predictions/results",
   "predictions/metrics", "classifications/results", "classifications/metrics",
   "weather/ingestion/history", "weather/etl/status", "weather/quality", "system/status",

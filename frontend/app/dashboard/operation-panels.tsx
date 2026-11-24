@@ -6,8 +6,8 @@ import { Clock3, Database, Layers3 } from "lucide-react";
 import type { EChartsOption } from "echarts";
 import { Chart } from "./chart";
 import {
-  displayNumber, localDay, localTime, locationName, request, useData,
-  type Classification, type Cluster, type Evaluation, type Location, type Prediction,
+  displayNumber, localDay, localTime, locationName, request, useCollection, useData,
+  type Classification, type Cluster, type Evaluation, type Location, type Prediction, type ProviderForecast,
   type Quality, type Run, type Scope, type Warehouse,
 } from "./data";
 import { Empty, Loading, Pager, Panel, QueryError, Resource, StatePill } from "./ui";
@@ -48,12 +48,28 @@ function Confusion({ labels, matrix, theme }: { labels: string[]; matrix: number
 
 export function MachineLearning({ scope, filterForecasts, locations, theme }: { scope: Scope; filterForecasts: boolean; locations: Location[]; theme: Theme }) {
   const clusters = useData<Cluster[]>("clustering/results", { ...scope, limit: 500 });
+  const providerForecasts = useCollection<ProviderForecast>("weather/forecasts", scope, Boolean(scope.location));
   const forecastQuery = filterForecasts ? scope : { location: scope.location };
   const predictions = useData<Prediction[]>("predictions/results", { ...forecastQuery, limit: 8 });
   const classification = useData<Classification[]>("classifications/results", { ...forecastQuery, limit: 8 });
   const clusterMetrics = useData<Evaluation>("clustering/metrics");
   const predictMetrics = useData<Evaluation>("predictions/metrics");
   const classMetrics = useData<Evaluation>("classifications/metrics");
+  const dailyForecasts = new Map<string, Map<string, { total: number; hours: number }>>();
+  const forecastModels = new Set<string>();
+  for (const row of providerForecasts.data ?? []) {
+    const rain = row.payload.values?.precipitation;
+    if (rain == null) continue;
+    const date = localDay(row.valid_at);
+    const model = row.payload.model ?? row.source;
+    forecastModels.add(model);
+    const day = dailyForecasts.get(date) ?? new Map<string, { total: number; hours: number }>();
+    const value = day.get(model) ?? { total: 0, hours: 0 };
+    value.total += rain;
+    value.hours += 1;
+    day.set(model, value);
+    dailyForecasts.set(date, day);
+  }
   return <>
     <Panel title="Weather clusters" subtitle="Principal component projection from the trained K-means model · up to 500 results">
       <Resource query={clusters} missingModel>{(rows) => {
@@ -67,8 +83,19 @@ export function MachineLearning({ scope, filterForecasts, locations, theme }: { 
         <span>Silhouette score <strong>{displayNumber(value.metrics.silhouette_score, 3)}</strong></span>
       </div>}</Resource>
     </Panel>
+      <Panel title="Provider rainfall forecast" subtitle="Daily precipitation from stored provider forecast runs. Availability depends on the selected dates and latest import.">
+      <p className="chart-note">These are provider model outputs, not rain-gauge observations or certainty percentages. Daily totals sum the available hourly precipitation; the hour count is shown so incomplete days are identifiable.</p>
+      <Resource query={providerForecasts}>
+        {() => dailyForecasts.size ? <div className="table-wrap"><table>
+          <thead><tr><th>Target date (ICT)</th>{[...forecastModels].sort().map((model) => <th key={model}>{forecastName(model)}</th>)}</tr></thead>
+          <tbody>{[...dailyForecasts].sort(([a], [b]) => a.localeCompare(b)).map(([date, models]) => <tr key={date}>
+            <td>{date}</td>{[...forecastModels].sort().map((model) => <td key={model}>{forecastCell(models.get(model))}</td>)}
+          </tr>)}</tbody></table></div> : <Empty title="No provider forecasts for these dates"
+            detail="Import the latest ECMWF/GFS forecast snapshots, then refresh. Provider forecasts usually cover only the coming days." />}
+      </Resource>
+    </Panel>
     <div className="two-col grid">
-      <Panel title="Next-day rainfall" subtitle={filterForecasts ? "Stored ML predictions for the selected target dates" : "Latest stored ML predictions"}>
+      <Panel title="ML next-day rainfall estimate" subtitle="Statistical model estimate for the next local day; not a multi-day forecast or an observation.">
         <Resource query={predictions} missingModel>{(rows) => <div className="table-wrap"><table>
           <thead><tr><th>Location</th><th>Target date</th><th>Predicted mm</th><th>Issued (ICT)</th></tr></thead>
           <tbody>{rows.map((row) => <tr key={row.location + row.target_date + row.issued_at}>
@@ -118,6 +145,18 @@ export function MachineLearning({ scope, filterForecasts, locations, theme }: { 
       </Panel>
     </div>
   </>;
+}
+
+function forecastCell(value?: { total: number; hours: number }) {
+  return value ? <>{displayNumber(value.total)} mm <small>({value.hours}/24 h)</small></> : "—";
+}
+
+function forecastName(model: string) {
+  const names: Record<string, string> = {
+    ecmwf_ifs025: "ECMWF IFS (mm)", gfs_seamless: "GFS Seamless (mm)",
+    "open-meteo-forecast-api": "Open-Meteo forecast (mm)",
+  };
+  return names[model] ?? `${model} (mm)`;
 }
 
 function Runs({ rows, warehouse = false }: { rows: Run[]; warehouse?: boolean }) {
