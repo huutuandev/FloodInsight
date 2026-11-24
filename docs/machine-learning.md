@@ -66,6 +66,18 @@ This run used Hải Châu, retrospective availability, and 2024-01-01 through 20
 
 On validation, climatology had the lowest MAE and RMSE. On test, the random forest had the lowest MAE and RMSE, while lag-8 was worse on both metrics. This run shows that the model improved on the two baselines on test data, but climatology remained close to the model and was slightly better on validation.
 
+## Pooled 9-location retrospective retrain
+
+The pooled model omitted `location`, training 2024-01-01 through 2025-12-31 across Hải Châu, Thanh Khê, Liên Chiểu, Cẩm Lệ, Ngũ Hành Sơn, Sơn Trà, Hòa Vang, Hòa Bắc, and Hòa Khương with retrospective availability. All nine locations have ERA5 archive coverage from 2024-01-01 through 2026-11-18. The 2022-10-14 VRAIN ground-gauge peak is outside this training window and was not included in either the chronological train, validation, or test partitions.
+
+| Regression | Validation MAE | Validation RMSE | Test MAE | Test RMSE |
+| --- | ---: | ---: | ---: | ---: |
+| Random forest | 7.274157 mm | 18.635214 mm | 14.691558 mm | 23.590159 mm |
+| Lag-8 persistence | 8.822305 mm | 25.762162 mm | 19.909336 mm | 30.177952 mm |
+| Monthly climatology | 5.691407 mm | 17.836064 mm | 14.330004 mm | 21.818623 mm |
+
+The pooled test split had 1,296 samples; climatology was close to the random forest and had 0.361554 mm lower test MAE, while the random forest had 1.770336 mm lower test RMSE. The random forest outperformed lag-8 on test MAE and RMSE. On validation, climatology had the lowest MAE and RMSE.
+
 | Classification | Macro precision | Macro recall | Macro F1 |
 | --- | ---: | ---: | ---: |
 | Validation | 0.1364 | 0.2500 | 0.1765 |
