@@ -88,22 +88,6 @@ def test_monthly_chunks_cover_multiyear_range():
     assert sum((last - first).days + 1 for first, last in batches) == 1096
 
 
-def test_location_filter_selects_only_requested_etl_checkpoints():
-    from types import SimpleNamespace
-
-    window = SimpleNamespace(locations=["hai-chau"], start_date=DAY, end_date=DAY, reprocess=False, after_batch_id=0)
-    checkpoints = [
-        {"location_code": "hai-chau", "id": 1, "etl_run_id": None},
-        {"location_code": "son-tra", "id": 2, "etl_run_id": None},
-    ]
-    points = [point for point in POINTS if point.code in window.locations]
-    pending = [batch for batch in checkpoints
-               if batch["location_code"] in {point.code for point in points}
-               and (window.reprocess or batch["etl_run_id"] is None)
-               and batch["id"] > window.after_batch_id]
-    assert [row["id"] for row in pending] == [1]
-
-
 def test_ml_split_filters_availability_and_embargoes_crossing_targets():
     lower, upper = historical.utc_bounds(DAY, DAY)
     records = sample_records()

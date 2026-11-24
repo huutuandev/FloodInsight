@@ -16,7 +16,6 @@ class DateRange(BaseModel):
     start_date: date
     end_date: date
     max_batches: Annotated[int, Field(ge=1, le=120)] = 5
-    locations: list[Annotated[str, Field(min_length=1, max_length=64)]] | None = None
 
     @model_validator(mode="after")
     def validate_dates(self) -> "DateRange":
@@ -26,8 +25,6 @@ class DateRange(BaseModel):
             raise ValueError("end_date must be on or after start_date")
         if self.end_date > datetime.now(timezone.utc).date() - timedelta(days=5):
             raise ValueError("ERA5 dates must be at least five days behind the current UTC date")
-        if self.locations is not None and (not self.locations or len(set(self.locations)) != len(self.locations)):
-            raise ValueError("locations must be a nonempty list without duplicates")
         return self
 
 

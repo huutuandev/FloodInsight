@@ -1,6 +1,6 @@
 # Historical weather backfill and ETL
 
-The warehouse downloads Open-Meteo ERA5 reanalysis for the nine [Da Nang sampling points](ingestion.md). ERA5 is a global reanalysis, not a direct observation from a Hai Chau rain gauge. Its grid is about 25 km; point coordinates select a grid estimate, not street-level weather. It provides gridded estimates for liquid rain, total precipitation, temperature, humidity, and wind. The two coordinates recorded for each sample distinguish the requested point and the provider’s grid cell. [Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api)
+The warehouse downloads Open-Meteo ERA5 reanalysis for the nine [Da Nang sampling points](ingestion.md). ERA5 is the fixed source throughout the date range. It provides gridded estimates for liquid rain, total precipitation, temperature, humidity, and wind. The two coordinates recorded for each sample distinguish the requested point and the provider’s grid cell. [Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api)
 
 ## Run the pipeline
 
@@ -13,24 +13,18 @@ Start the warehouse with `docker compose up -d --build warehouse-service`. Compo
 | `GET /warehouse/status?limit=20` | Returns recent executions, their outcomes and progress, and total downloaded/loaded checkpoint counts. |
 | `GET /warehouse/quality?limit=20&offset=0` | Returns paginated quality reports for loaded checkpoints, newest first. |
 
-Send `start_date`, `end_date`, and optionally `max_batches`. Backfill also accepts `locations`, a list of point codes. Use `locations: ["hai-chau"]` to backfill Hai Chau alone first; omit it to process all nine locations. Both POST requests are synchronous, so use small batches when running behind a request timeout. The defaults are five downloads and 20 ETL batches per invocation. Repeat the same multi-year range until `progress.remaining_batches` is zero for each operation. A successful invocation means its bounded work completed. A failed invocation returns its saved run record with an error reason. Re-submit the range after correcting the error to resume from saved checkpoints. An advisory lock prevents concurrent warehouse operations.
+Send `start_date`, `end_date`, and optionally `max_batches`. Both POST requests are synchronous, so use small batches when running behind a request timeout. The defaults are five downloads and 20 ETL batches per invocation. Repeat the same multi-year range until `progress.remaining_batches` is zero for each operation. A successful invocation means its bounded work completed. A failed invocation returns its saved run record with an error reason. Re-submit the range after correcting the error to resume from saved checkpoints. An advisory lock prevents concurrent warehouse operations.
 
 ```sh
 curl -X POST http://127.0.0.1:8002/warehouse/backfill \
   -H 'Content-Type: application/json' \
-  -d '{"start_date":"1940-01-02","end_date":"2026-11-19","max_batches":5,"locations":["hai-chau"]}'
+  -d '{"start_date":"2023-10-01","end_date":"2023-10-31","max_batches":5}'
 curl -X POST http://127.0.0.1:8002/warehouse/etl/run \
   -H 'Content-Type: application/json' \
-  -d '{"start_date":"1940-01-02","end_date":"2026-11-19","max_batches":20,"locations":["hai-chau"]}'
+  -d '{"start_date":"2023-10-01","end_date":"2023-10-31"}'
 ```
 
 The oldest complete local date is 1940-01-02. The API restricts requests to dates at least five days behind UTC today to account for the documented ERA5 publication lag. Availability can vary. All-missing batches fail without writing a checkpoint. Checkpoints identify the source, point, and actual date bounds, so overlapping requests can reuse raw records even if their checkpoint boundaries differ. ETL selects only checkpoints fully contained in the requested range. Use the original backfill range to process all its checkpoints. To rebuild completed batches, set `reprocess: true` and pass the previous response’s `progress.last_batch_id` as `after_batch_id` on subsequent invocations.
-
-### Independent event checks
-
-Do not label gridded ERA5 values or reconstructed hourly curves as rain-gauge ground truth. For the October 2022 flood, the National Centre for Hydro-Meteorological Forecasting reported 550–600 mm across Da Nang from 19:00 13 October to 07:00 15 October; point observations included 697.6 mm at Da Nang station and 775.2 mm at Suoi Da over the period 01:00 14 October to 01:00 15 October. These are event-level station observations, not values specifically attributed to the Hai Chau sampling coordinate. [National Disaster Prevention and Control Authority](https://phongchongthientai.mard.gov.vn/Pages/chuyen-gia-ly-giai-5-nguyen-nhan-chinh-gay-ngap-lut-tai-thanh-pho-da-nang.aspx)
-
-The project previously contained hand-written hourly arrays and synthetic values attributed to VRAIN/Hai Chau. They have been removed from the ingestion scripts. If those scripts were run against an existing database, inspect source `vietnam-vrain-haichau-ground-truth` and `vietnam-vrain-gauges`; those records are not trustworthy observations and should not be used for analysis. A verifiable public Hai Chau station time series has not been located, so no station-specific observations are included here.
 
 ## Storage and data quality
 

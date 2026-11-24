@@ -21,15 +21,12 @@ class HistoricalPipeline:
             error = None
             try:
                 checkpoints = repo.checkpoints(conn, source_id, window)
-                points = [point for point in POINTS if window.locations is None or point.code in window.locations]
-                if window.locations is not None and len(points) != len(window.locations):
-                    raise ArchiveError("Unknown location code in locations")
                 if operation == "backfill":
                     existing = {(b["start_date"], b["end_date"], b["location_code"]) for b in checkpoints}
                     pending = [
                         (point, start, end)
                         for start, end in month_batches(window.start_date, window.end_date)
-                        for point in points
+                        for point in POINTS
                         if (start, end, point.code) not in existing
                     ]
                     progress |= {"remaining_batches": len(pending), "raw_rows_inserted": 0}
@@ -49,8 +46,7 @@ class HistoricalPipeline:
                 else:
                     pending = [
                         batch for batch in checkpoints
-                        if batch["location_code"] in {point.code for point in points}
-                        and (window.reprocess or batch["etl_run_id"] is None)
+                        if (window.reprocess or batch["etl_run_id"] is None)
                         and batch["id"] > window.after_batch_id
                     ]
                     progress |= {

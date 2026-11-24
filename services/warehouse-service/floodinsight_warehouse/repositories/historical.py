@@ -86,8 +86,6 @@ class HistoricalRepository:
                     HistoricalBatch.source_id == source_id,
                     HistoricalBatch.start_date >= window.start_date,
                     HistoricalBatch.end_date <= window.end_date,
-                    HistoricalBatch.location_code.in_(window.locations)
-                    if window.locations is not None else text("TRUE"),
                 ).order_by(HistoricalBatch.id)
             ).mappings().all()
 
