@@ -80,7 +80,7 @@ See the [dashboard guide](docs/dashboard.md) for the frontend, data filters, and
 
 ## Local development and tests
 
-From any Python service directory, create and activate a virtual environment using Python 3.11 or newer, then run:
+Each Python service has its own `requirements-dev.txt`. From a service directory, create and activate a virtual environment using Python 3.11 or newer, then run:
 
 ```sh
 python -m pip install -r requirements-dev.txt
@@ -88,6 +88,13 @@ python -m pytest
 ```
 
 For example, from `services/ingestion-service`, run `python -m uvicorn floodinsight_ingestion.main:app --reload`. Phase 1 health tests require no database or provider connection. Each service reads its `FLOODINSIGHT_<SERVICE>_ENVIRONMENT` setting from the process environment.
+
+If your virtual environment is in the repository root, run commands with paths to the service requirements and tests, for example:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r .\services\ingestion-service\requirements-dev.txt
+.\.venv\Scripts\python.exe -m pytest .\services\ingestion-service\tests
+```
 
 From `frontend/`, use Node.js 22 or newer:
 

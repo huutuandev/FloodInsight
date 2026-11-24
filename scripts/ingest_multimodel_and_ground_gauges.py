@@ -84,6 +84,8 @@ def fetch_forecast(http_url, point, model, days, timeout):
             received_at = datetime.now(timezone.utc)
     except (HTTPError, URLError, TimeoutError, OSError, ValueError) as error:
         raise ImportErrorDetail(f"provider request/JSON failed: {type(error).__name__}") from error
+    if not isinstance(payload, dict):
+        raise ImportErrorDetail("provider response is not a JSON object")
     hourly = payload.get("hourly")
     if not isinstance(hourly, dict):
         raise ImportErrorDetail("provider response has no hourly object")
@@ -112,6 +114,9 @@ def fetch_forecast(http_url, point, model, days, timeout):
         parsed.append(instant)
     if any(right <= left for left, right in zip(parsed, parsed[1:])):
         raise ImportErrorDetail("provider timestamps are not strictly increasing")
+    for index in range(len(times)):
+        for name in VARIABLES:
+            normalized_measure(hourly, name, index)
     return received_at, hourly, parsed, payload
 
 
@@ -119,9 +124,14 @@ def normalized_measure(hourly, name, index):
     value = hourly[name][index]
     if value is None:
         return None
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(value)):
         raise ImportErrorDetail(f"{name} contains a non-numeric value")
-    low, high = next((bounds[1], bounds[2]) for bounds in MEASURES.values() if bounds[0] == name)
+    if name in {"precipitation_probability", "cape"}:
+        low, high = (0, 100) if name == "precipitation_probability" else (0, 1_000_000)
+    else:
+        low, high = next((bounds[1], bounds[2]) for bounds in MEASURES.values()
+                         if bounds[0] == name)
     if not low <= value <= high:
         raise ImportErrorDetail(f"{name} is outside accepted physical bounds")
     return value
@@ -183,12 +193,6 @@ def import_point(engine, source_id, run_id, point, model, days, timeout, api_url
     inserted = 0
     with engine.begin() as conn:
         for instant, values, _measures in records:
-            probability = values["precipitation_probability"]
-            cape = values["cape"]
-            if probability is not None and (not isinstance(probability, (int, float)) or not 0 <= probability <= 100):
-                raise ImportErrorDetail("precipitation_probability is outside [0, 100]")
-            if cape is not None and (not isinstance(cape, (int, float)) or cape < 0):
-                raise ImportErrorDetail("cape is outside its valid range")
             payload = {"kind": "hourly", "model": model, "location": {
                 "code": point["code"], "name": point["name"], "latitude": float(point["latitude"]),
                 "longitude": float(point["longitude"])}, "grid": grid,
@@ -211,6 +215,14 @@ def import_point(engine, source_id, run_id, point, model, days, timeout, api_url
 
 
 def run_import(args):
+    if args.days not in range(1, 8):
+        raise ValueError("--days must be between 1 and 7")
+    if args.timeout <= 0:
+        raise ValueError("--timeout must be greater than zero")
+    if args.retries < 1:
+        raise ValueError("--retries must be at least 1")
+    if not args.url.startswith(("https://", "http://")):
+        raise ValueError("--url must use http or https")
     engine = create_engine(DatabaseSettings().url(), pool_pre_ping=True)
     failures = []
     try:
@@ -221,6 +233,20 @@ def run_import(args):
                 )).mappings().all()
                 if not points:
                     raise RuntimeError("No locations in dim_location; run warehouse backfill first")
+                codes = [point["code"] for point in points]
+                expected_codes = {
+                    "hai-chau", "thanh-khe", "lien-chieu", "cam-le", "ngu-hanh-son",
+                    "son-tra", "hoa-vang", "hoa-bac", "hoa-khuong",
+                }
+                if len(codes) != len(set(codes)) or set(codes) != expected_codes:
+                    raise RuntimeError(
+                        "dim_location does not contain exactly the nine configured Da Nang points"
+                    )
+                for point in points:
+                    for key, lower, upper in (("latitude", -90, 90), ("longitude", -180, 180)):
+                        value = point[key]
+                        if value is None or not lower <= value <= upper:
+                            raise RuntimeError(f"Location {point['code']} has invalid {key}")
             source_ids = {}
             with engine.begin() as conn:
                 for source in SOURCES:
