@@ -67,3 +67,13 @@ def test_provider_bounds_request_duration(monkeypatch):
 
     with pytest.raises(open_meteo.ProviderError, match="timed out"):
         asyncio.run(run())
+
+
+def test_sampling_points_have_stable_unique_codes_and_valid_coordinates():
+    points = open_meteo.DANANG_POINTS
+    assert [point.code for point in points] == [
+        "hai-chau", "thanh-khe", "lien-chieu", "cam-le", "ngu-hanh-son",
+        "son-tra", "hoa-vang", "hoa-bac", "hoa-khuong",
+    ]
+    assert len({point.code for point in points}) == len(points)
+    assert all(-90 <= point.latitude <= 90 and -180 <= point.longitude <= 180 for point in points)

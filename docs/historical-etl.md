@@ -1,6 +1,6 @@
 # Historical weather backfill and ETL
 
-The warehouse downloads Open-Meteo ERA5 reanalysis for the five [Da Nang sampling points](ingestion.md). ERA5 is the fixed source throughout the date range. It provides gridded estimates for liquid rain, total precipitation, temperature, humidity, and wind. The two coordinates recorded for each sample distinguish the requested point and the provider’s grid cell. [Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api)
+The warehouse downloads Open-Meteo ERA5 reanalysis for the nine [Da Nang sampling points](ingestion.md). ERA5 is the fixed source throughout the date range. It provides gridded estimates for liquid rain, total precipitation, temperature, humidity, and wind. The two coordinates recorded for each sample distinguish the requested point and the provider’s grid cell. [Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api)
 
 ## Run the pipeline
 

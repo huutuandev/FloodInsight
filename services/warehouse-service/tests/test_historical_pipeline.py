@@ -25,6 +25,13 @@ POINT = POINTS[0]
 ARCHIVE = Path(__file__).parent / "fixtures" / "open_meteo_era5_hai_chau_2023-10-13.json"
 
 
+def test_historical_points_match_the_live_ingestion_network():
+    assert [point.code for point in POINTS] == [
+        "hai-chau", "thanh-khe", "lien-chieu", "cam-le", "ngu-hanh-son",
+        "son-tra", "hoa-vang", "hoa-bac", "hoa-khuong",
+    ]
+
+
 def sample_records():
     return historical.archive_records(
         ArchiveResponse.model_validate_json(ARCHIVE.read_bytes()), POINT,

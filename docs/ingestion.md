@@ -1,6 +1,6 @@
 # Open-Meteo ingestion
 
-The ingestion service polls the Open-Meteo Forecast API for five fixed representative points. It requests modeled current conditions and a 24-hour hourly series by default. Variables are air temperature, relative humidity, wind speed, total precipitation, rain, showers, sea-level pressure, and WMO weather code. Measurements retain provider units and missing values. Each snapshot records the requested point and the grid coordinates Open-Meteo returned. [Forecast API documentation](https://open-meteo.com/en/docs)
+The ingestion service polls the Open-Meteo Forecast API for nine fixed representative points. It requests modeled current conditions and a 24-hour hourly series by default. Variables are air temperature, relative humidity, wind speed, total precipitation, rain, showers, sea-level pressure, and WMO weather code. Measurements retain provider units and missing values. Each snapshot records the requested point and the grid coordinates Open-Meteo returned. [Forecast API documentation](https://open-meteo.com/en/docs)
 
 | Location | Latitude | Longitude | Point reference |
 | --- | ---: | ---: | --- |
@@ -9,8 +9,20 @@ The ingestion service polls the Open-Meteo Forecast API for five fixed represent
 | Liên Chiểu | 16.072720 | 108.158150 | [Liên Chiểu place coordinates](https://www.geodatos.net/en/coordinates/vietnam/lien-chieu) |
 | Cẩm Lệ | 16.015300 | 108.201300 | [Cẩm Lệ locality coordinates](https://mapcarta.com/29658468) |
 | Ngũ Hành Sơn | 16.008333 | 108.252500 | [Ngũ Hành Sơn coordinate location](https://www.wikidata.org/wiki/Q7022659) |
+| Sơn Trà | 16.101100 | 108.261200 | Representative sampling point |
+| Hòa Vang (Hòa Phong) | 15.986700 | 108.140800 | Representative sampling point |
+| Hòa Vang (Hòa Bắc) | 16.147200 | 108.016700 | Representative sampling point |
+| Hòa Vang (Hòa Khương) | 15.945800 | 108.106900 | Representative sampling point |
 
 These points represent sampling locations. They do not represent administrative centroids, gauge locations, or district-wide averages.
+
+## Additional forecast-model imports
+
+`scripts/ingest_multimodel_and_ground_gauges.py` imports ECMWF IFS and GFS Seamless hourly output into the raw forecast table. Run it from the repository's warehouse Python environment after applying migrations and loading locations, for example `python scripts/ingest_multimodel_and_ground_gauges.py --days 7`. It writes one ingestion run per model and commits each location's snapshots separately. Re-running is safe: identical feed, point, valid-time, and content hashes are ignored. A partially failed model run is recorded as failed with per-location errors, and the command exits unsuccessfully so an operator can retry it.
+
+Open-Meteo's forecast response does not provide a model initialization time for each requested model value. These imports therefore leave `issued_at` NULL, store provider `valid_at` and database `received_at`, and use the content hash to distinguish revisions. They must not be treated as issue-time forecasts in backtests. Additional variables such as precipitation probability and CAPE remain in the raw payload; this importer does not publish them into the canonical weather fact schema.
+
+The repository does not currently contain licensed, source-backed VRAIN observations. The importer intentionally does not create VRAIN rows or derive hourly values from daily totals. Add gauge data only when the actual station identifiers, observation interval, units, source record, and usage rights are available. A daily total cannot be presented as measured hourly rainfall.
 
 ## Timing, storage, and recovery
 
