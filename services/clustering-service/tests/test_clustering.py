@@ -15,6 +15,27 @@ def test_empty_training_is_rejected():
         train_clusters([], 3)
 
 
+def test_k_scan_reports_two_through_six_and_keeps_three_default():
+    rows = [
+        {
+            "rainfall": float(i % 3),
+            "intensity": float(i % 3),
+            "rainy_hours": float(i % 4),
+            "humidity": 60 + float(i % 5),
+            "temperature": 20 + float(i % 6),
+            "wind": float(i % 7),
+        }
+        for i in range(30)
+    ]
+    default_artifact, default_metrics = train_clusters(rows, 3)
+    assert default_metrics["selected_clusters"] == 3
+    assert default_metrics["silhouette_scores"] is None
+
+    _, scan_metrics = train_clusters(rows, 3, scan_k=True)
+    assert set(scan_metrics["silhouette_scores"]).issubset({"2", "3", "4", "5", "6"})
+    assert scan_metrics["selected_clusters"] in range(2, 7)
+
+
 def test_clustering_training_and_regeneration():
     if os.getenv("FLOODINSIGHT_RUN_ML_DB_TESTS") != "1":
         pytest.skip("Requires the real ERA5 sample in a disposable database")

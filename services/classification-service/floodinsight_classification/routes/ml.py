@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Request
 from pydantic import Field
@@ -17,6 +17,8 @@ router = APIRouter(prefix="/classification", tags=["rainfall intensity classific
 
 class TrainingRequest(DailyTraining):
     thresholds: Thresholds = Field(default_factory=Thresholds)
+    class_weight: Literal["balanced_subsample", "balanced"] = "balanced_subsample"
+    three_classes: bool = False
 
 
 def registry(request):
@@ -27,11 +29,13 @@ def registry(request):
 @warehouse_errors
 def train(payload: TrainingRequest, request: Request):
     parts = training_partitions(payload)
-    artifact, splits, metrics = train_classifier(parts, payload.thresholds)
+    artifact, splits, metrics, class_order = train_classifier(
+        parts, payload.thresholds, payload.class_weight, payload.three_classes,
+    )
     return registry(request).save(artifact, {
         "scope": payload.model_dump(mode="json"), "source": SOURCE, "features": FEATURES,
         "locations": sorted(parts["train"].location.unique().tolist()), "splits": splits,
-        "metrics": metrics, "class_order": list(CLASSES), "target": "next local day rainfall intensity",
+        "metrics": metrics, "class_order": list(class_order), "target": "next local day rainfall intensity",
     })
 
 
@@ -40,7 +44,8 @@ def train(payload: TrainingRequest, request: Request):
 def predict(payload: NextDayRequest, request: Request):
     model, artifact = registry(request).load(payload.version)
     target, issued, location, features = inference_input(payload, model)
-    label, probabilities = predict_class(artifact, features)
+    class_order = tuple(model["training_metadata"].get("class_order", CLASSES))
+    label, probabilities = predict_class(artifact, features, class_order)
     return {"version": model["version"], **save_next_day(
         "classification", model["id"], target, issued, location, label, probabilities,
     )}

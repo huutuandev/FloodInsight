@@ -38,6 +38,26 @@ class ETLRequest(DateRange):
     after_batch_id: Annotated[int, Field(ge=0, le=9223372036854775807)] = 0
 
 
+class ForecastETLRequest(BaseModel):
+    start_date: date
+    end_date: date
+
+    @model_validator(mode="after")
+    def validate_dates(self) -> "ForecastETLRequest":
+        if self.end_date < self.start_date:
+            raise ValueError("end_date must be on or after start_date")
+        if (self.end_date - self.start_date).days >= 31:
+            raise ValueError("Forecast materialization is limited to 31 days per request")
+        return self
+
+
+class ForecastETLResult(BaseModel):
+    start_date: date
+    end_date: date
+    rows_upserted: int
+    locations: list[str]
+
+
 class ArchiveHourlies(BaseModel):
     time: list[int]
     precipitation: list[FiniteFloat | None]

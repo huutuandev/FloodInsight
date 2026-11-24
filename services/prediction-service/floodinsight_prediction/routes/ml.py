@@ -14,15 +14,24 @@ from ..services.regression import train_regressor
 router = APIRouter(prefix="/prediction", tags=["rainfall prediction"])
 
 
+class PredictionTraining(DailyTraining):
+    residual_on_climatology: bool = False
+    simple_tree: bool = False
+
+
 def registry(request):
     return Models("prediction", "next-day-rainfall-regressor", request.app.state.settings.artifact_dir)
 
 
 @router.post("/train")
 @warehouse_errors
-def train(payload: DailyTraining, request: Request):
+def train(payload: PredictionTraining, request: Request):
     parts = training_partitions(payload)
-    artifact, splits, metrics = train_regressor(parts)
+    artifact, splits, metrics = train_regressor(
+        parts,
+        residual_on_climatology=payload.residual_on_climatology,
+        simple_tree=payload.simple_tree,
+    )
     return registry(request).save(artifact, {
         "scope": payload.model_dump(mode="json"), "source": SOURCE, "features": FEATURES,
         "locations": sorted(parts["train"].location.unique().tolist()),
@@ -35,9 +44,13 @@ def train(payload: DailyTraining, request: Request):
 def predict(payload: NextDayRequest, request: Request):
     model, artifact = registry(request).load(payload.version)
     target, issued, location, features = inference_input(payload, model)
-    rainfall = max(0.0, float(artifact.predict(features)[0]))
+    value = float(artifact.predict(features)[0])
+    if getattr(artifact, "residual_on_climatology", False):
+        monthly = getattr(artifact, "monthly_climatology", {})
+        fallback = getattr(artifact, "monthly_climatology_fallback", 0.0)
+        value = max(0.0, monthly.get(target.month, fallback) + value)
     return {"version": model["version"], **save_next_day(
-        "prediction", model["id"], target, issued, location, rainfall,
+        "prediction", model["id"], target, issued, location, max(0.0, value),
     )}
 
 

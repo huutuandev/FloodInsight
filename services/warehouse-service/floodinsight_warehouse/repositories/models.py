@@ -229,16 +229,43 @@ class FactWeatherHourly(HourlyWeatherFactKeys, WeatherMeasurements, Base):
     )
 
 
-class FactWeatherForecastHourly(HourlyWeatherFactKeys, WeatherMeasurements, Base):
+class FactWeatherForecastHourly(WeatherMeasurements, Base):
     __tablename__ = "fact_weather_forecast_hourly"
     __table_args__ = (
-        PrimaryKeyConstraint("location_id", "weather_source_id", "hour_start_utc", "issued_at"),
         Index("ix_fact_weather_forecast_hourly_hour", "hour_start_utc", "issued_at"),
-        CheckConstraint("isfinite(issued_at) AND issued_at <= hour_start_utc", name="issue_time"),
+        Index("ix_fact_weather_forecast_hourly_snapshot", "hour_start_utc", "snapshot_received_at"),
+        Index(
+            "uq_fact_weather_forecast_hourly_issued",
+            "location_id", "weather_source_id", "hour_start_utc", "issued_at",
+            unique=True,
+            postgresql_where=text("issued_at IS NOT NULL"),
+        ),
+        Index(
+            "uq_fact_weather_forecast_hourly_snapshot",
+            "location_id", "weather_source_id", "hour_start_utc", "snapshot_received_at",
+            unique=True,
+            postgresql_where=text("issued_at IS NULL"),
+        ),
+        CheckConstraint(
+            "(issued_at IS NOT NULL AND isfinite(issued_at) AND issued_at <= hour_start_utc "
+            "AND snapshot_received_at IS NULL) OR "
+            "(issued_at IS NULL AND snapshot_received_at IS NOT NULL "
+            "AND isfinite(snapshot_received_at))",
+            name="forecast_identity",
+        ),
         *weather_checks(),
     )
 
-    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    location_id: Mapped[int] = mapped_column(ForeignKey("dim_location.id"), nullable=False)
+    weather_source_id: Mapped[int] = mapped_column(
+        ForeignKey("dim_weather_source.id"), nullable=False
+    )
+    hour_start_utc: Mapped[datetime] = mapped_column(
+        ForeignKey("dim_time.hour_start_utc"), nullable=False
+    )
+    issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    snapshot_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class FactRainfallDaily(WeatherFactKeys, Base):

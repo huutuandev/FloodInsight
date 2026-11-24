@@ -93,6 +93,7 @@ class ModelWindow(DateRange):
 
 class ClusterTrain(ModelWindow):
     clusters: int = Field(3, ge=2, le=12)
+    scan_k: bool = False
 
 
 class ClusterRun(ModelWindow):
@@ -101,6 +102,8 @@ class ClusterRun(ModelWindow):
 
 class ForecastTrain(ModelWindow):
     availability: Literal["recorded", "retrospective"] = "recorded"
+    residual_on_climatology: bool = False
+    simple_tree: bool = False
 
 
 class Thresholds(BaseModel):
@@ -111,6 +114,8 @@ class Thresholds(BaseModel):
 
 class ClassTrain(ForecastTrain):
     thresholds: Thresholds = Field(default_factory=Thresholds)
+    class_weight: Literal["balanced_subsample", "balanced"] = "balanced_subsample"
+    three_classes: bool = False
 
 
 class NextDay(BaseModel):

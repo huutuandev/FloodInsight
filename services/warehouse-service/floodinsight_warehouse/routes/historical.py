@@ -5,7 +5,16 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ..config import DatabaseSettings
 from ..repositories.historical import HistoricalRepository, WarehouseBusy
-from ..schemas.historical import BackfillRequest, ETLRequest, QualityReport, RunResult, WarehouseStatus
+from ..schemas.historical import (
+    BackfillRequest,
+    ETLRequest,
+    ForecastETLRequest,
+    ForecastETLResult,
+    QualityReport,
+    RunResult,
+    WarehouseStatus,
+)
+from ..services.forecasts import materialize_forecasts
 from ..services.pipeline import HistoricalPipeline
 
 router = APIRouter(prefix="/warehouse", tags=["historical warehouse"])
@@ -29,6 +38,18 @@ def backfill(window: BackfillRequest, request: Request):
 @router.post("/etl/run", response_model=RunResult)
 def etl(window: ETLRequest, request: Request):
     return run_operation(request, "etl", window)
+
+
+@router.post("/forecast-etl/run", response_model=ForecastETLResult)
+def forecast_etl(window: ForecastETLRequest):
+    try:
+        return materialize_forecasts(window)
+    except WarehouseBusy as exc:
+        raise HTTPException(409, "Another forecast warehouse operation is running") from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(503, "Warehouse unavailable") from exc
 
 
 @router.get("/status", response_model=WarehouseStatus)

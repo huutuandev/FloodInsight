@@ -5,7 +5,14 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from floodinsight_classification.main import app
-from floodinsight_classification.services.classifier import CLASSES, Thresholds, rainfall_labels
+from floodinsight_classification.routes.ml import TrainingRequest
+from floodinsight_classification.services.classifier import (
+    CLASSES,
+    THREE_CLASSES,
+    Thresholds,
+    classification_metrics,
+    rainfall_labels,
+)
 from floodinsight_ml.storage import DatabaseSettings, connect
 
 WINDOW = {"location": "hai-chau", "start_date": "2023-06-01", "end_date": "2024-02-29"}
@@ -17,6 +24,38 @@ def test_class_thresholds_are_ordered_and_lower_inclusive():
     assert rainfall_labels([1.0], Thresholds(light_mm=2)).tolist() == [0]
     with pytest.raises(ValidationError):
         Thresholds(moderate_mm=25, heavy_mm=10)
+
+
+def test_three_class_option_is_fixed_and_default_is_four_classes():
+    assert rainfall_labels([0, 0.1, 15.99, 16], Thresholds(), True).tolist() == [0, 1, 1, 2]
+    assert TrainingRequest(
+        start_date="2024-01-01", end_date="2025-12-31",
+    ).three_classes is False
+    metrics = classification_metrics([0, 1, 2], [0, 1, 1], THREE_CLASSES)
+    assert set(metrics["per_class"]) == set(THREE_CLASSES)
+
+
+def test_classification_metrics_include_accuracy_and_majority_baseline():
+    actual = [1, 1, 1, 2]
+    predicted = [1, 1, 2, 2]
+    metrics = classification_metrics(actual, predicted)
+    assert metrics["accuracy"] == pytest.approx(0.75)
+    assert metrics["majority_baseline"]["label"] == "Light Rain"
+    assert metrics["majority_baseline"]["accuracy"] == pytest.approx(0.75)
+
+
+def test_class_weight_option_keeps_existing_default():
+    assert TrainingRequest(
+        availability="retrospective",
+        start_date="2024-01-01",
+        end_date="2025-12-31",
+    ).class_weight == "balanced_subsample"
+    assert TrainingRequest(
+        availability="retrospective",
+        start_date="2024-01-01",
+        end_date="2025-12-31",
+        class_weight="balanced",
+    ).class_weight == "balanced"
 
 
 def test_classifier_reports_support_probabilities_and_regenerates():

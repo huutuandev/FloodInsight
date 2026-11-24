@@ -203,6 +203,18 @@ def test_fact_grains_and_measure_checks(db, fact_keys):
         "23514",
     )
 
+    snapshot = hourly | {
+        "issued_at": None,
+        "snapshot_received_at": MIDNIGHT_UTC,
+    }
+    db.execute(insert(FactWeatherForecastHourly).values(snapshot))
+    assert_rejected(db, insert(FactWeatherForecastHourly).values(snapshot), "23505")
+    assert_rejected(
+        db,
+        insert(FactWeatherForecastHourly).values(hourly | {"issued_at": None}),
+        "23514",
+    )
+
     daily = fact_keys | {
         "local_date": LOCAL_DATE,
         "rainfall_total_mm": Decimal("1.250"),

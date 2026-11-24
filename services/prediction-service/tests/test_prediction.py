@@ -7,8 +7,55 @@ from fastapi.testclient import TestClient
 from floodinsight_ml.daily import LAGS, lag_features
 from floodinsight_ml.storage import DatabaseSettings, connect
 from floodinsight_prediction.main import app
+from floodinsight_prediction.services.regression import (
+    climatology_predictions,
+    residual_predictions,
+    train_regressor,
+)
 
 WINDOW = {"location": "hai-chau", "start_date": "2023-06-01", "end_date": "2024-02-29"}
+
+
+def test_climatology_is_fit_only_on_training_data():
+    train = pytest.importorskip("pandas").DataFrame({
+        "target_date": [date(2024, 1, 10), date(2024, 1, 20), date(2024, 2, 10)],
+        "target": [1.0, 3.0, 8.0],
+    })
+    split = pytest.importorskip("pandas").DataFrame({
+        "target_date": [date(2024, 1, 25), date(2024, 2, 25), date(2024, 3, 25)],
+    })
+    predicted = climatology_predictions(train, split)
+    assert predicted.tolist() == [2.0, 8.0, 4.0]
+
+
+def test_residual_and_simple_tree_options():
+    pd = pytest.importorskip("pandas")
+    features = ["rain_d8", "rain_d9", "rain_d10", "rain_mean_d8_d14",
+                "temperature_d8", "humidity_d8", "wind_d8", "season_sin", "season_cos"]
+    train = pd.DataFrame({
+        "target_date": [date(2024, 1, day) for day in range(1, 16)] +
+                       [date(2024, 2, day) for day in range(1, 16)],
+        "target": [float(day % 5) for day in range(30)],
+        "rain_d8": [float(day % 4) for day in range(30)],
+    })
+    for feature in features:
+        if feature not in train:
+            train[feature] = 1.0
+    split = train.iloc[:10].copy()
+    parts = {"train": train, "validation": split, "test": split}
+    artifact, _, metrics = train_regressor(parts, residual_on_climatology=True, simple_tree=True)
+    forest = artifact.steps[-1][1]
+    assert artifact.residual_on_climatology is True
+    assert forest.max_depth == 5
+    assert forest.min_samples_leaf == 10
+    assert "residual_climatology_simple_tree" in metrics["validation"]
+
+    class NegativeResidualModel:
+        def predict(self, rows):
+            return [-10.0] * len(rows)
+
+    residual = residual_predictions(NegativeResidualModel(), train, split)
+    assert (residual >= 0).all()
 
 
 def test_features_exclude_unavailable_or_missing_archive_days():
