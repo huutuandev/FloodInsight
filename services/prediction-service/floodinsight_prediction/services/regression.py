@@ -1,7 +1,7 @@
-from sklearn.ensemble import RandomForestRegressor
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 from sklearn.pipeline import make_pipeline
+from xgboost import XGBRegressor
 
 from floodinsight_ml.daily import FEATURES, split_metadata
 from floodinsight_ml.storage import connect
@@ -14,17 +14,33 @@ def errors(actual, predicted):
 
 def train_regressor(parts):
     train = parts["train"]
+    # XGBoost with tuned hyperparameters for heavy-rain extreme event capture at Hai Chau
     model = make_pipeline(
         SimpleImputer(strategy="median"),
-        RandomForestRegressor(n_estimators=200, min_samples_leaf=3, random_state=42, n_jobs=2),
+        XGBRegressor(
+            n_estimators=600,
+            learning_rate=0.04,
+            max_depth=6,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            min_child_weight=3,
+            reg_alpha=0.05,
+            reg_lambda=1.0,
+            gamma=0.1,
+            random_state=42,
+            n_jobs=2,
+            tree_method="hist",       # Fast histogram-based splitting
+            eval_metric="mae",
+        ),
     )
     model.fit(train[FEATURES].astype(float), train["target"])
     metrics = {}
     for name in ("validation", "test"):
         split = parts[name]
+        pred = model.predict(split[FEATURES].astype(float))
         metrics[name] = {
-            "random_forest": errors(split["target"], model.predict(split[FEATURES].astype(float))),
-            "lag_8_persistence": errors(split["target"], split["rain_d8"]),
+            "xgboost": errors(split["target"], pred),
+            "lag_1_persistence": errors(split["target"], split["rain_d1"]),
         }
     return model, split_metadata(parts), metrics
 
@@ -59,13 +75,13 @@ def calibrate_prediction(location_code: str, target_date, raw_ml_val: float) -> 
         gfs_val = gfs if gfs is not None else ecmwf
         base_val = 0.60 * ecmwf + 0.20 * gfs_val + 0.20 * ml_val
     else:
-        # Retrospective / historical quantile tail correction
-        if ml_val > 14.0:
-            base_val = 18.0 + (ml_val - 14.0) * 3.5
-        elif ml_val > 10.0:
-            base_val = 9.5 + (ml_val - 10.0) * 2.1
+        # Calibrated baseline preserving XGBoost learned ground-truth distribution
+        if ml_val < 0.5:
+            base_val = 0.0
+        elif ml_val > 50.0:
+            base_val = ml_val * 1.15
         else:
-            base_val = ml_val * 0.95
+            base_val = ml_val
 
     # Urban microclimate ground-truth adjustment for Hai Chau
     if location_code == "hai-chau":
