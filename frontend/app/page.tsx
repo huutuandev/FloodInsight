@@ -7,6 +7,6 @@ export default async function Home() {
     timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit",
   }).format(new Date()) + "T00:00:00Z");
   const end = today.toISOString().slice(0, 10);
-  today.setUTCDate(today.getUTCDate() - 29);
+  today.setUTCFullYear(today.getUTCFullYear() - 2);
   return <Dashboard initialRange={{ start_date: today.toISOString().slice(0, 10), end_date: end }} />;
 }

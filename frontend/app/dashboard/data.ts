@@ -39,6 +39,8 @@ export type Evaluation = {
     samples?: number; silhouette_score?: number;
     test?: {
       random_forest?: { mae_mm: number; rmse_mm: number };
+      xgboost?: { mae_mm: number; rmse_mm: number };
+      lag_1_persistence?: { mae_mm: number; rmse_mm: number };
       lag_8_persistence?: { mae_mm: number; rmse_mm: number };
       f1_macro?: number; precision_macro?: number; recall_macro?: number;
       confusion_matrix?: number[][];
