@@ -10,7 +10,7 @@ from floodinsight_ml.daily_results import next_day_results, save_next_day
 from floodinsight_ml.schemas import Version
 from floodinsight_ml.storage import Models, SOURCE
 
-from ..services.classifier import CLASSES, Thresholds, predict_class, train_classifier
+from ..services.classifier import CLASSES, Thresholds, calibrate_classification, predict_class, train_classifier
 
 router = APIRouter(prefix="/classification", tags=["rainfall intensity classification"])
 
@@ -41,8 +41,13 @@ def predict(payload: NextDayRequest, request: Request):
     model, artifact = registry(request).load(payload.version)
     target, issued, location, features = inference_input(payload, model)
     label, probabilities = predict_class(artifact, features)
+    
+    thresholds_dict = model["training_metadata"]["scope"].get("thresholds", {})
+    thresholds = Thresholds(**thresholds_dict) if thresholds_dict else Thresholds()
+    cal_label, cal_probs = calibrate_classification(payload.location, target, label, probabilities, thresholds)
+    
     return {"version": model["version"], **save_next_day(
-        "classification", model["id"], target, issued, location, label, probabilities,
+        "classification", model["id"], target, issued, location, cal_label, cal_probs,
     )}
 
 

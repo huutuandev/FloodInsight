@@ -9,7 +9,7 @@ from floodinsight_ml.daily_results import next_day_results, save_next_day
 from floodinsight_ml.schemas import Version
 from floodinsight_ml.storage import Models, SOURCE
 
-from ..services.regression import train_regressor
+from ..services.regression import calibrate_prediction, train_regressor
 
 router = APIRouter(prefix="/prediction", tags=["rainfall prediction"])
 
@@ -35,9 +35,10 @@ def train(payload: DailyTraining, request: Request):
 def predict(payload: NextDayRequest, request: Request):
     model, artifact = registry(request).load(payload.version)
     target, issued, location, features = inference_input(payload, model)
-    value = float(artifact.predict(features)[0])
+    raw_value = float(artifact.predict(features)[0])
+    calibrated_value = calibrate_prediction(payload.location, target, raw_value)
     return {"version": model["version"], **save_next_day(
-        "prediction", model["id"], target, issued, location, value,
+        "prediction", model["id"], target, issued, location, calibrated_value,
     )}
 
 
