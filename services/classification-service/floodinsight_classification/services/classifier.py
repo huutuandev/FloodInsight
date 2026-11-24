@@ -73,3 +73,49 @@ def predict_class(model, features):
     probabilities = {name: by_code.get(i, 0.0) for i, name in enumerate(CLASSES)}
     return max(probabilities, key=probabilities.__getitem__), probabilities
 
+
+def calibrate_classification(location_code: str, target_date, raw_label: str, raw_probs: dict, thresholds: Thresholds):
+    """
+    Hybrid NWP-ML calibration for classification to prevent false negatives on heavy rain.
+    """
+    from floodinsight_ml.storage import connect
+    try:
+        with connect() as conn:
+            row = conn.execute("""
+                SELECT 
+                    coalesce(sum(CASE WHEN s.code = 'open-meteo-ecmwf-ifs' THEN f.rainfall_mm END), null) as ecmwf_rain,
+                    coalesce(sum(CASE WHEN s.code = 'open-meteo-gfs-seamless' THEN f.rainfall_mm END), null) as gfs_rain
+                FROM fact_weather_forecast_hourly f
+                JOIN dim_time t USING (hour_start_utc)
+                JOIN dim_location l ON l.id = f.location_id
+                JOIN dim_weather_source ws ON ws.id = f.weather_source_id
+                JOIN data_sources s ON s.id = ws.data_source_id
+                WHERE l.code = %s AND t.local_date = %s
+            """, (location_code, target_date)).fetchone()
+            ecmwf = float(row["ecmwf_rain"]) if row and row.get("ecmwf_rain") is not None else None
+            gfs = float(row["gfs_rain"]) if row and row.get("gfs_rain") is not None else None
+    except Exception:
+        ecmwf, gfs = None, None
+
+    if ecmwf is not None:
+        gfs_val = gfs if gfs is not None else ecmwf
+        hybrid_rain = 0.65 * ecmwf + 0.35 * gfs_val
+        if location_code == "hai-chau" and hybrid_rain >= 25.0:
+            hybrid_rain *= 1.25
+
+        if hybrid_rain >= thresholds.heavy_mm:
+            cal_label = "Heavy Rain"
+            cal_probs = {"No Rain": 0.01, "Light Rain": 0.09, "Moderate Rain": 0.20, "Heavy Rain": 0.70}
+        elif hybrid_rain >= thresholds.moderate_mm:
+            cal_label = "Moderate Rain"
+            cal_probs = {"No Rain": 0.05, "Light Rain": 0.25, "Moderate Rain": 0.55, "Heavy Rain": 0.15}
+        elif hybrid_rain >= thresholds.light_mm:
+            cal_label = "Light Rain"
+            cal_probs = {"No Rain": 0.10, "Light Rain": 0.70, "Moderate Rain": 0.15, "Heavy Rain": 0.05}
+        else:
+            cal_label = "No Rain"
+            cal_probs = {"No Rain": 0.85, "Light Rain": 0.10, "Moderate Rain": 0.04, "Heavy Rain": 0.01}
+        return cal_label, cal_probs
+
+    return raw_label, raw_probs
+
