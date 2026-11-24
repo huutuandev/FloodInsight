@@ -1,67 +1,137 @@
-"use client";
+﻿"use client";
 
-import { displayNumber, localTime, useCollection, type ProviderForecast } from "./data";
-import { dailyTotals, feeds, shiftDay, useRainfallClock, type DailyTotal } from "./provider-rainfall";
-import { Empty, Panel, Resource } from "./ui";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ApiError, displayNumber, localTime, request, useCollection, useData, type Classification, type DateRange, type Prediction } from "./data";
+import { shiftDay } from "./provider-rainfall";
+import { Empty, Loading, Panel, QueryError } from "./ui";
 
-function rainSignal(values: (DailyTotal | undefined)[]) {
-  const complete = values.filter((value): value is DailyTotal => value?.hours === 24);
-  if (complete.length < feeds.length) return "Thiếu dữ liệu so sánh";
-  const wet = complete.filter((value) => value.mm >= 0.1).length;
-  if (wet === complete.length) return "Cả hai dự báo có mưa";
-  if (wet === 0) return "Cả hai dự báo dưới 0,1 mm";
-  return "Hai mô hình chưa thống nhất";
+type Outlook = {
+  version: string;
+  issued_at: string;
+  input_start: string;
+  input_end: string;
+  published: boolean;
+  availability: "retrospective" | "recorded";
+  predictions: {
+    lead_days: number; target_date: string; rainfall_mm: number;
+    test_mae_mm: number; baseline_mae_mm: number;
+  }[];
+};
+
+type DailyForecast = {
+  target_date: string; rainfall_mm: number; issued_at: string;
+  test_mae_mm?: number; baseline_mae_mm?: number; preview?: boolean;
+};
+
+function intensity(mm: number) {
+  if (mm >= 25) return "Mưa to";
+  if (mm >= 10) return "Mưa vừa";
+  if (mm >= 0.1) return "Mưa nhẹ";
+  return "Không mưa";
 }
 
-export function ForecastPanel({ location }: { location: string }) {
-  const { today } = useRainfallClock();
-  const start = shiftDay(today, 1);
-  const end = shiftDay(today, 7);
-  const query = useCollection<ProviderForecast>("weather/forecasts", {
-    location, start_date: start, end_date: shiftDay(end, 1),
-  }, Boolean(location), 5 * 60_000);
-  const days = Array.from({ length: 7 }, (_, index) => shiftDay(start, index));
+const labels: Record<string, string> = {
+  "No Rain": "Không mưa", "Light Rain": "Mưa nhẹ", "Moderate Rain": "Mưa vừa",
+  "Heavy Rain": "Mưa to", "Moderate/Heavy Rain": "Mưa vừa hoặc to",
+};
 
-  return <Panel title="Dự báo mưa 7 ngày tới"
-    headingLabel="Provider rainfall forecast"
-    subtitle="Lượng mưa theo ngày giờ Việt Nam. Tín hiệu có mưa dùng ngưỡng 0,1 mm/ngày và xét hai nguồn đủ 24 giờ.">
-    {!location ? <Empty title="Chọn điểm lấy mẫu để xem lượng mưa" /> :
-      <Resource query={query} empty={<Empty title="Chưa có dữ liệu mô hình cho kỳ này" />}>{(rows) => {
-        const totals = dailyTotals(rows);
-        if (!days.some((date) => totals.has(date))) {
-          return <Empty title="Chưa có dữ liệu ECMWF hoặc GFS cho kỳ này" />;
-        }
-        const received = feeds.map((feed) => rows
-          .filter((row) => row.source === feed.code)
-          .reduce((latest, row) => Math.max(latest, Date.parse(row.received_at)), 0));
-        return <>
-          <div className="table-wrap"><table>
-            <thead><tr><th>Ngày (ICT)</th>{feeds.map((feed) => <th key={feed.code}>{feed.name}</th>)}
-              <th>Tín hiệu mưa</th></tr></thead>
-            <tbody>{days.map((date) => {
-              const models = totals.get(date);
-              const values = feeds.map((feed) => models?.get(feed.code));
-              return <tr key={date}><td>{date}</td>
-                {values.map((value, index) => <td key={feeds[index].code}>
-                  {value ? <>{displayNumber(value.mm)} mm <small>({value.hours}/24 giờ)</small></> : "—"}
-                </td>)}
-                <td>{rainSignal(values)}</td>
-              </tr>;
-            })}</tbody>
-          </table></div>
-          <p className="chart-note">
-            Dữ liệu qua Open-Meteo. Giờ nhận bản ghi mới nhất (ICT) · {feeds.map((feed, index) =>
-              `${feed.name}: ${received[index] ? localTime(new Date(received[index]).toISOString()) : "—"}`
-            ).join(" · ")}.
-          </p>
-        </>;
-      }}</Resource>}
-    <p className="chart-note">
-      <a href={location === "hai-chau"
-        ? "https://nchmf.gov.vn/kttvsiteE/vi-VN/1/hai-chau-tp-da-nang-w55.html"
-        : "https://kttvtrungbo.org.vn/category/tp-da-nang/"} target="_blank" rel="noreferrer">
-        {location === "hai-chau" ? "Bản tin chính thức cho Hải Châu" : "Bản tin của Đài KTTV Trung Bộ"}
-      </a>
-    </p>
+export function ForecastPanel({ location, range }: { location: string; range?: DateRange }) {
+  const query = useData<Outlook>("predictions/outlook", { location }, Boolean(location), 5 * 60_000);
+  const scope = { location, ...range };
+  const historical = useData<DailyForecast[]>("predictions/outlook/history", scope, Boolean(location && range));
+  const legacyRain = useCollection<Prediction>("predictions/results", scope, Boolean(location && range));
+  const legacyClasses = useCollection<Classification>("classifications/results", scope, Boolean(location && range));
+  const client = useQueryClient();
+  const publish = useMutation({
+    mutationFn: (point: string) => request("predictions/outlook/publish", undefined, undefined, { location: point }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["predictions/outlook"] });
+      void client.invalidateQueries({ queryKey: ["predictions/outlook/history"] });
+    },
+  });
+  const rain = new Map<string, DailyForecast>();
+  const classes = new Map<string, Classification>();
+  const within = (date: string) => !range || (date >= range.start_date && date <= range.end_date);
+  function add(row: DailyForecast) {
+    const previous = rain.get(row.target_date);
+    if (within(row.target_date) && (!previous || Date.parse(row.issued_at) > Date.parse(previous.issued_at))) {
+      rain.set(row.target_date, row);
+    }
+  }
+  for (const row of historical.data ?? []) add(row);
+  for (const row of legacyRain.data ?? []) add(row);
+  const data = query.data;
+  for (const row of data?.predictions ?? []) {
+    if (data && (data.published || !rain.has(row.target_date))) {
+      add({ ...row, issued_at: data.issued_at, preview: !data.published });
+      const current = rain.get(row.target_date);
+      if (current?.issued_at === data.issued_at) {
+        rain.set(row.target_date, {
+          ...current, test_mae_mm: row.test_mae_mm, baseline_mae_mm: row.baseline_mae_mm,
+        });
+      }
+    }
+  }
+  for (const row of legacyClasses.data ?? []) {
+    if (within(row.target_date) && !classes.has(row.target_date)) classes.set(row.target_date, row);
+  }
+  const selectedDays = range ? Math.round((Date.parse(range.end_date) - Date.parse(range.start_date)) / 86_400_000) + 1 : 0;
+  const dates = range && selectedDays > 0 && selectedDays <= 31
+    ? Array.from({ length: selectedDays }, (_, index) => shiftDay(range.start_date, index))
+    : [...new Set([...rain.keys(), ...classes.keys()])].sort();
+  const pending = query.isPending || Boolean(range && (historical.isPending || legacyRain.isPending || legacyClasses.isPending));
+  const issues = range ? [historical, legacyRain, legacyClasses, query] : [query];
+
+  return <Panel title={range ? "Dự báo lượng mưa và phân loại theo ngày" : "Mô hình FloodInsight: Dự báo mưa 7 ngày tới"}
+    headingLabel="FloodInsight rainfall forecast"
+    subtitle={range ? `Khoảng ngày áp dụng: ${range.start_date} đến ${range.end_date} (ICT).`
+      : "Mô hình XGBoost dự báo từng ngày từ lịch sử ERA5 đã lưu."}
+    action={query.data && !query.data.published && <button className="button secondary" type="button"
+      disabled={publish.isPending} onClick={() => publish.mutate(location)}>Phát hành dự báo</button>}>
+    {publish.error && publish.variables === location &&
+      <QueryError error={publish.error} retry={() => publish.mutate(location)} />}
+    {!location ? <Empty title="Chọn điểm lấy mẫu để xem dự báo" /> : <>
+      {issues.map((item, index) => item.error
+        && (!(item.error instanceof ApiError) || item.error.status !== 404)
+        && <QueryError key={index} error={item.error} retry={() => void item.refetch()} />)}
+      {data && <p className="chart-note">
+          Đầu vào ERA5: {data.input_start} đến {data.input_end} · {localTime(data.issued_at)} ICT.
+          {" "}Bản 7 ngày hiện tại: {data.published ? "đã phát hành." : "xem trước."}
+      </p>}
+      {!dates.length ? pending ? <Loading /> : <Empty title="Chưa có dự báo trong khoảng ngày đã chọn" /> :
+        <div className="table-wrap"><table>
+          <thead><tr>
+            <th scope="col">Ngày (ICT)</th><th scope="col" aria-label="Predicted mm">Lượng mưa dự đoán</th>
+            <th scope="col">Phân loại cường độ</th><th scope="col">Phát hành (ICT)</th>
+            <th scope="col">MAE mô hình</th><th scope="col">MAE đối chứng</th>
+          </tr></thead>
+          <tbody>{dates.map((date) => {
+            const row = rain.get(date);
+            const label = classes.get(date);
+            return <tr key={date}>
+              <th scope="row">{date}</th>
+              <td>{row ? `${displayNumber(row.rainfall_mm)} mm` : pending ? "Đang tải…" : "Chưa có dự báo"}</td>
+              <td>{label ? <details>
+                <summary>{labels[label.label] ?? label.label} <small>· Bộ phân loại ngày kế tiếp</small></summary>
+                <small>Tính lúc {localTime(label.issued_at)} ICT.</small>
+                {Object.entries(label.probabilities ?? {}).map(([key, value]) => <div key={key}>
+                  {labels[key] ?? key}: {displayNumber(value * 100)} điểm trên 100
+                </div>)}
+              </details>
+                : row ? <>{intensity(row.rainfall_mm)} <small>· Theo ngưỡng mm</small></>
+                : pending ? "Đang tải…" : "Chưa có phân loại"}</td>
+              <td>{row ? <>{localTime(row.issued_at)}{row.preview && <small> · Xem trước</small>}</>
+                : label ? localTime(label.issued_at) : "—"}</td>
+              <td>{row?.test_mae_mm != null ? `${displayNumber(row.test_mae_mm, 2)} mm` : "—"}</td>
+              <td>{row?.baseline_mae_mm != null ? `${displayNumber(row.baseline_mae_mm, 2)} mm` : "—"}</td>
+            </tr>;
+          })}</tbody>
+        </table></div>}
+        <p className="chart-note">
+          Phân loại theo lượng mưa dự báo dùng các ngưỡng 0,1 / 10 / 25 mm mỗi ngày.
+          MAE đo sai số trung bình trên tập kiểm tra ERA5. Đối chứng dùng lượng mưa của ngày đầu vào gần nhất.
+          {data?.availability === "retrospective" && " Kiểm tra hồi cứu giả định ERA5 có độ trễ sáu ngày."}
+        </p>
+    </>}
   </Panel>;
 }

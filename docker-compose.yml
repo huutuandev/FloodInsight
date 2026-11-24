@@ -85,7 +85,7 @@ services:
   forecast-refresh:
     <<: *runtime
     build: ./services/warehouse-service
-    command: ["python", "/app/scripts/ingest_multimodel_and_ground_gauges.py", "--interval-seconds", "${FLOODINSIGHT_FORECAST_REFRESH_SECONDS:-21600}"]
+    command: ["python", "/app/scripts/ingest_multimodel_and_ground_gauges.py", "--interval-seconds", "${FLOODINSIGHT_FORECAST_REFRESH_SECONDS:-21600}", "--warehouse-url", "http://warehouse-service:8000", "--prediction-url", "http://prediction-service:8000"]
     volumes:
       - ./scripts/ingest_multimodel_and_ground_gauges.py:/app/scripts/ingest_multimodel_and_ground_gauges.py:ro
     environment:
@@ -95,6 +95,10 @@ services:
     depends_on:
       warehouse-migrate:
         condition: service_completed_successfully
+      warehouse-service:
+        condition: service_healthy
+      prediction-service:
+        condition: service_healthy
 
   analysis-service:
     <<: *python-service

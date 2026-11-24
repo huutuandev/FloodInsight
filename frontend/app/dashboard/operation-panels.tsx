@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Clock3, Database, Layers3, RefreshCw, Sparkles, TrendingUp } from "lucide-react";
+import { Clock3, Database, Layers3, RefreshCw, Sparkles } from "lucide-react";
 import type { EChartsOption } from "echarts";
 import { Chart } from "./chart";
 import { ForecastPanel } from "./forecast-panel";
+import { OutlookHistory } from "./outlook-history";
 import {
   displayNumber, localDay, localTime, locationName, request, useData,
-  type Classification, type Cluster, type Evaluation, type Location, type Prediction,
+  type Cluster, type Evaluation, type Location,
   type Quality, type Run, type Scope, type Warehouse,
 } from "./data";
 import { Empty, Loading, Pager, Panel, QueryError, Resource, StatePill } from "./ui";
@@ -63,30 +64,6 @@ function clusterOption(rows: Cluster[], locations: Location[]): EChartsOption {
   };
 }
 
-function RainfallBadge({ mm }: { mm: number | null }) {
-  if (mm == null) return <span>—</span>;
-  let pillClass = "pill good";
-  let label = "Mưa nhỏ (Low)";
-
-  if (mm >= 100) {
-    pillClass = "pill danger";
-    label = "Mưa rất to (Very High)";
-  } else if (mm >= 50) {
-    pillClass = "pill danger";
-    label = "Mưa to (High)";
-  } else if (mm >= 16) {
-    pillClass = "pill warn";
-    label = "Mưa vừa (Medium)";
-  }
-
-  return (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
-      <strong style={{ fontSize: "13.5px", color: "var(--heading)" }}>{displayNumber(mm)} mm</strong>
-      <span className={pillClass}>{label}</span>
-    </div>
-  );
-}
-
 function Confusion({ labels, matrix, theme }: { labels: string[]; matrix: number[][]; theme: Theme }) {
   const cells = matrix.flatMap((row, y) => row.map((count, x) => [x, y, count]));
   const maxVal = Math.max(1, ...cells.map((cell) => cell[2]));
@@ -115,14 +92,13 @@ function Confusion({ labels, matrix, theme }: { labels: string[]; matrix: number
 
 export function MachineLearning({ scope, filterForecasts, locations, theme }: { scope: Scope; filterForecasts: boolean; locations: Location[]; theme: Theme }) {
   const clusters = useData<Cluster[]>("clustering/results", { ...scope, limit: 500 });
-  const forecastQuery = filterForecasts ? scope : { location: scope.location };
-  const predictions = useData<Prediction[]>("predictions/results", { ...forecastQuery, limit: 8 });
-  const classification = useData<Classification[]>("classifications/results", { ...forecastQuery, limit: 8 });
   const clusterMetrics = useData<Evaluation>("clustering/metrics");
   const predictMetrics = useData<Evaluation>("predictions/metrics");
   const classMetrics = useData<Evaluation>("classifications/metrics");
   return <>
-    <ForecastPanel location={scope.location} />
+    <ForecastPanel location={scope.location}
+      range={filterForecasts ? { start_date: scope.start_date, end_date: scope.end_date } : undefined} />
+    <OutlookHistory location={scope.location} />
     <Panel
       title="Phân cụm hình thế thời tiết (K-Means Clustering)"
       headingLabel="Weather clusters"
@@ -141,54 +117,6 @@ export function MachineLearning({ scope, filterForecasts, locations, theme }: { 
         {value.version && <span>Phiên bản: <code>{value.version.slice(0, 10)}</code></span>}
       </div>}</Resource>
     </Panel>
-
-    <div className="two-col grid">
-      <Panel
-        title="Dự báo lượng mưa ngày tới (Regression)"
-        headingLabel="Next-day rainfall"
-        subtitle="Mô hình học máy dự báo một ngày kế tiếp; xem bảng phía trên để biết dự báo nhiều ngày từ ECMWF/GFS."
-        action={<TrendingUp className="accent" size={19} />}
-      >
-        <Resource query={predictions} missingModel>{(rows) => <div className="table-wrap"><table>
-          <thead>
-            <tr>
-              <th>Khu vực / Quận</th>
-              <th>Ngày dự báo</th>
-              <th aria-label="Predicted mm">Lượng mưa dự báo</th>
-              <th>Thời điểm phát hành (ICT)</th>
-            </tr>
-          </thead>
-          <tbody>{rows.map((row) => <tr key={row.location + row.target_date + row.issued_at}>
-            <td><strong>{locationName(row.location, locations)}</strong></td>
-            <td>{row.target_date}</td>
-            <td><RainfallBadge mm={row.rainfall_mm} /></td>
-            <td>{localTime(row.issued_at)}</td>
-          </tr>)}</tbody>
-        </table></div>}</Resource>
-      </Panel>
-
-      <Panel
-        title="Phân loại cấp độ mưa (Classification)"
-        headingLabel="Rainfall classification"
-        subtitle="Nhãn lớp và điểm tin cậy của bộ phân loại; điểm này chưa được hiệu chuẩn thành xác suất thực tế."
-        action={<Activity className="accent" size={19} />}
-      >
-        <Resource query={classification} missingModel>{(rows) => <div className="classification-list">
-          {rows.map((row) => <details key={row.location + row.target_date + row.issued_at}>
-            <summary>
-              <span>{locationName(row.location, locations)} · {row.target_date}</span>
-              <strong>{row.label} {row.confidence == null ? "" : `· ${displayNumber(row.confidence * 100)}%`}</strong>
-            </summary>
-            <p>Phát hành lúc {localTime(row.issued_at)} ICT</p>
-            {Object.entries(row.probabilities ?? {}).map(([name, value]) => <div className="probability" key={name}>
-              <span>{name}</span>
-              <progress max={1} value={value} aria-label={name} />
-              <span>{displayNumber(value * 100)}%</span>
-            </div>)}
-          </details>)}
-        </div>}</Resource>
-      </Panel>
-    </div>
 
     <div className="two-col grid">
       <Panel

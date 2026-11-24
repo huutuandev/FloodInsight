@@ -7,7 +7,7 @@ be expanded into fabricated hourly observations.
 import argparse
 from contextlib import contextmanager
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 import math
@@ -293,10 +293,31 @@ def parse_args():
     parser.add_argument("--days", type=int, choices=range(1, 8), default=7)
     parser.add_argument("--past-days", type=int, choices=range(0, 15), default=8)
     parser.add_argument("--interval-seconds", type=int, default=0, help="Repeat import; 0 runs once")
+    parser.add_argument("--warehouse-url", help="Sync the ERA5 input day before each scheduled import")
+    parser.add_argument("--prediction-url", help="Publish the daily Hải Châu outlook")
     parser.add_argument("--timeout", type=float, default=20)
     parser.add_argument("--retries", type=int, default=3)
     parser.add_argument("--url", default=API_URL)
     return parser.parse_args()
+
+
+def refresh_archive(warehouse_url):
+    today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+    day = (today - timedelta(days=7)).isoformat()
+    window = {"start_date": day, "end_date": day, "max_batches": 9}
+    for path, payload in (
+        ("backfill", window | {"refresh_incomplete": True}),
+        ("etl/run", window),
+    ):
+        request = Request(
+            f"{warehouse_url.rstrip('/')}/warehouse/{path}",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urlopen(request, timeout=180) as response:
+            run = json.load(response)
+        if run["status"] != "succeeded":
+            raise RuntimeError(f"ERA5 {path} for {day}: {run.get('error_message')}")
 
 
 if __name__ == "__main__":
@@ -305,6 +326,22 @@ if __name__ == "__main__":
     if args.interval_seconds < 0:
         raise SystemExit("--interval-seconds must be nonnegative")
     while True:
+        if args.warehouse_url:
+            try:
+                refresh_archive(args.warehouse_url)
+            except Exception:
+                LOG.exception("ERA5 input refresh failed")
+        if args.prediction_url:
+            try:
+                request = Request(
+                    f"{args.prediction_url.rstrip('/')}/prediction/outlook/publish",
+                    data=b'{"location":"hai-chau"}',
+                    headers={"Content-Type": "application/json"},
+                )
+                with urlopen(request, timeout=30) as response:
+                    LOG.info("Hải Châu outlook: %s", json.load(response))
+            except Exception:
+                LOG.exception("Hải Châu outlook publication failed")
         try:
             run_import(args)
         except Exception:

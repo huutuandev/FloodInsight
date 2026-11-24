@@ -73,10 +73,10 @@ def available_at(row, mode):
     return max(row["day_end"], receipt) if receipt is not None else None
 
 
-def lag_features(days, target, issued_at, mode):
+def lag_features(days, target, issued_at, mode, lead_days=1):
     lags = []
     for lag in LAGS:
-        row = days.get(target - lag * DAY)
+        row = days.get(target - (lag + lead_days - 1) * DAY)
         if row is None or row["rainfall"] is None:
             return None
         effective = available_at(row, mode)
@@ -94,8 +94,9 @@ def lag_features(days, target, issued_at, mode):
     )))
 
 
-def training_partitions(window):
-    rows = daily_rows(window.start_date - 14 * DAY, window.end_date, window.location)
+def training_partitions(window, lead_days=1, rows=None):
+    if rows is None:
+        rows = daily_rows(window.start_date - (14 + lead_days - 1) * DAY, window.end_date, window.location)
     index = {(row["location"], row["day"]): row for row in rows}
     # Within each location, calendar lookups enforce exact lags even across gaps.
     by_location = {}
@@ -110,14 +111,15 @@ def training_partitions(window):
         label_available = available_at(row, window.availability)
         if label_available is None or label_available > now:
             continue
+        issue = row["nominal_issue"] - (lead_days - 1) * DAY
         features = lag_features(
-            by_location[row["location"]], day, row["nominal_issue"],
-            window.availability,
+            by_location[row["location"]], day, issue,
+            window.availability, lead_days,
         )
         if features is not None:
             examples.append(features | {
                 "location": row["location"], "target_date": day, "target": row["rainfall"],
-                "issue": row["nominal_issue"], "label_available": label_available,
+                "issue": issue, "label_available": label_available,
             })
     dates = sorted({row["target_date"] for row in examples})
     if len(dates) < 45:

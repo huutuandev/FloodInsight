@@ -1,7 +1,8 @@
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
-from pydantic import Field, JsonValue, TypeAdapter, ValidationError
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 
 from ..schemas.gateway import (
     AnalysisQuery, AnalysisScope, BackfillRequest, ClassTrain, ClusterRun, ClusterTrain,
@@ -126,6 +127,40 @@ def bind_ml(group, service, upstream_group, kind, train_schema, inference_schema
 
 bind_ml("clustering", "clustering", "clustering", "ml_clustering", ClusterTrain, ClusterRun, "run")
 bind_ml("predictions", "prediction", "prediction", "ml_rainfall_prediction", ForecastTrain, NextDay, "predict")
+
+
+@router.get("/predictions/outlook", tags=["predictions"], response_model=Success[JsonValue])
+async def prediction_outlook(request: Request, location: str = Query(min_length=1, max_length=100)):
+    data = await forward(request, "prediction", "/prediction/outlook", query={"location": location})
+    return envelope(request, data, "ml_rainfall_outlook")
+
+
+class OutlookPublication(BaseModel):
+    location: str = Field(min_length=1, max_length=100)
+
+
+@router.post("/predictions/outlook/publish", tags=["predictions"], response_model=Success[JsonValue])
+async def publish_outlook(request: Request, payload: OutlookPublication):
+    data = await forward(request, "prediction", "/prediction/outlook/publish", body=payload, method="POST")
+    return envelope(request, data, "ml_outlook_publication")
+
+
+@router.get("/predictions/outlook/history", tags=["predictions"], response_model=Success[JsonValue])
+async def prediction_outlook_history(request: Request, location: str = Query(min_length=1, max_length=100),
+                                     lead_days: int | None = Query(default=None, ge=1, le=7),
+                                     start_date: date | None = None, end_date: date | None = None):
+    query = {"location": location}
+    if lead_days is not None:
+        query["lead_days"] = str(lead_days)
+    if start_date is not None:
+        query["start_date"] = start_date.isoformat()
+    if end_date is not None:
+        query["end_date"] = end_date.isoformat()
+    data = await forward(request, "prediction", "/prediction/outlook/history",
+                         query=query)
+    return envelope(request, data, "ml_outlook_history")
+
+
 bind_ml("classifications", "classification", "classification", "ml_rainfall_classification", ClassTrain, NextDay, "predict")
 
 

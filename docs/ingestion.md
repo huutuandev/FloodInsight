@@ -20,9 +20,9 @@ These points represent sampling locations. They do not represent administrative 
 
 `forecast-refresh` in Docker Compose imports [ECMWF IFS](https://www.ecmwf.int/en/forecasts/datasets/open-data) and [NOAA GFS](https://www.emc.ncep.noaa.gov/emc/pages/numerical_forecast_systems/gfs.php) via Open-Meteo every six hours by default. It loads Hải Châu first for each model. To refresh immediately, run `docker compose exec forecast-refresh python /app/scripts/ingest_multimodel_and_ground_gauges.py --days 7 --past-days 8` after warehouse ETL has seeded the nine sampling points. Inspect `docker compose logs forecast-refresh` and `ingestion_runs` for per-model outcomes. Identical feed, point, valid-time, and content hashes are ignored.
 
-The dashboard shows tomorrow through day seven independently of the historical date filter. Recent modeled values are shown in a separate table, with today limited to intervals that have ended. Both tables sum hourly total precipitation in millimeters by the interval start in Vietnam time and show hours available. Each model retains its own total. Agreement on rain means both have full coverage and at least 0.1 mm. It is not a calibrated probability.
+The recent-rainfall table shows the two provider estimates, with today limited to intervals that have ended. It sums hourly total precipitation in millimeters by the interval start in Vietnam time and shows hours available. The seven-day outlook is computed by FloodInsight's own regressors from archived ERA5; see [machine-learning.md](machine-learning.md). Before each scheduled refresh, Compose also asks the warehouse to download and load the newest ERA5 input day required by that outlook.
 
-The dashboard links to the [Vietnam National Center for Hydrometeorological Forecasting bulletin for Hải Châu](https://nchmf.gov.vn/kttvsiteE/vi-VN/1/hai-chau-tp-da-nang-w55.html) and the regional bulletins for other sampling points. The forecast totals come from ECMWF and NOAA.
+The [Vietnam National Center for Hydrometeorological Forecasting bulletin for Hải Châu](https://nchmf.gov.vn/kttvsiteE/vi-VN/1/hai-chau-tp-da-nang-w55.html) is available for external reference.
 
 ### Nearby rain-gauge reference for Hải Châu
 

@@ -14,6 +14,20 @@ Train requests accept `start_date`, `end_date` and optional `location`. Omitting
 
 To regenerate deleted results, keep the same model version and artifact. For clustering, repeat `/run` with the original location and date window. For a next-day result, replay `/predict` with the original location, version, and returned `issued_at`. Each call upserts its result key. Issue times must be between model creation and the present. Artifacts in the three model volumes and the corresponding database rows must be retained together.
 
+## Seven-day rainfall outlook
+
+`POST /prediction/outlook/train` takes the same date window and availability mode as regular training. It saves seven XGBoost regressors in one version, one per lead day. Each uses the same seven complete ERA5 days available at issuance; only the target calendar date and target rainfall vary by lead. Training and evaluation shift the issue time back for each lead and embargo labels that would be unavailable at the next split. No provider forecast enters the feature set. The outlook is served through `GET /api/v1/predictions/outlook?location=hai-chau`.
+
+The dashboard shows the input dates and held-out MAE by lead, alongside a baseline using the last input day's rainfall. Inference checks the actual ERA5 receipt times. Refresh the warehouse archive and ETL as dates become available. If a required input day is missing, the endpoint reports insufficient data. Historical gauge readings are displayed separately for reference.
+
+### Publication and verification plan
+
+1. Save each seven-day publication in `prediction_results`. The scheduled refresh publishes Hải Châu after attempting ERA5 sync. Manual publication uses `POST /api/v1/predictions/outlook/publish` with a location. A publication is atomic and unique per model version, location, and issue day (ICT). Opening the outlook reads the published values for the active model when available, otherwise it shows a preview.
+2. Compare published results from `GET /api/v1/predictions/outlook/history` with Hồ Thạc Gián. Calculate differences only for completed days with all 144 ten-minute slots. The pilot reads gauge totals live over the latest eight dates. Published forecasts are retained independently of this display window.
+3. Next, persist timestamped station records in the warehouse, add coverage repair across all seven input dates, and evaluate forecast skill by location, lead, and rain intensity once enough comparable days have accumulated.
+
+The Machine Learning date filter selects forecast target dates. The forecast table combines the newest published result per day with the current outlook and archived next-day results. A published result takes precedence over a preview. A saved next-day classifier label is shown when available; other days are grouped by the forecast amount using 0.1, 10, and 25 mm thresholds, without class probability scores.
+
 ## Clustering
 
 A sample is a location-day with complete liquid-rainfall coverage. The six features are total rainfall, mean positive-hour rainfall intensity, rainy-hour count, and mean humidity, temperature, and wind. For a fully observed dry day, intensity is defined as zero. Missing weather features use fitted medians. K-Means uses standardized features, with PCA fit to the same scaled data for two-dimensional visualization. The run response includes an ECharts scatter option. Metrics include the silhouette score and per-cluster means in the original units.
