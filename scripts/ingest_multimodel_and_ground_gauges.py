@@ -8,6 +8,7 @@ import argparse
 from contextlib import contextmanager
 import hashlib
 from datetime import datetime, timezone
+
 import json
 import logging
 import math
@@ -46,6 +47,7 @@ SOURCES = (
      "dataset": "GFS Seamless forecast", "model": "gfs_seamless",
      "name": "NOAA GFS Seamless", "reference": "https://open-meteo.com/en/docs"},
 )
+
 
 
 class ImportErrorDetail(Exception):
@@ -289,6 +291,7 @@ def parse_args():
     parser.add_argument("--retries", type=int, default=3)
     parser.add_argument("--url", default=API_URL)
     return parser.parse_args()
+
 
 
 if __name__ == "__main__":
