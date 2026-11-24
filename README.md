@@ -31,8 +31,8 @@ Each Python service has an independently buildable Docker image, runtime and tes
 | warehouse-service | Backfill Open-Meteo ERA5, run historical ETL, expose data quality, and own warehouse migrations. |
 | analysis-service | Generate and regenerate time-series patterns from warehouse data with Pandas and NumPy. |
 | clustering-service | Cluster complete daily weather periods with K-Means and expose PCA coordinates and evaluation. |
-| prediction-service | Train and serve a versioned random forest for next-day rainfall totals. |
-| classification-service | Train and serve a versioned random forest for next-day rainfall intensity classes. |
+| prediction-service | Train and serve versioned XGBoost models for next-day rainfall totals. |
+| classification-service | Train and serve versioned XGBoost models for next-day rainfall intensity classes. |
 | api-service | Route REST requests to all backend services and report dependency health. |
 | frontend | Present rainfall analytics and geographic layers with Next.js App Router, Tailwind CSS, Apache ECharts, and React Leaflet. |
 | postgres | Persist warehouse data in PostgreSQL 16 on a named volume. |

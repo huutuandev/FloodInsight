@@ -4,7 +4,7 @@ from fastapi import APIRouter, Query, Request
 from pydantic import Field, JsonValue, TypeAdapter, ValidationError
 
 from ..schemas.gateway import (
-    AnalysisQuery, AnalysisScope, BatchRequest, ClassTrain, ClusterRun, ClusterTrain,
+    AnalysisQuery, AnalysisScope, BackfillRequest, ClassTrain, ClusterRun, ClusterTrain,
     CoverageQuery, CoverageRow, ETLRequest, Failure, ForecastRow, ForecastTrain, LocationRow, Locations, Meta,
     ModelPage, NextDay, ObservationRow, Page, Period, RainfallRow, Success, Version, WeatherQuery,
 )
@@ -152,7 +152,7 @@ async def ingestion_history(request: Request, query: Annotated[HistoryPage, Quer
 
 
 @router.post("/weather/backfill", tags=["weather"], response_model=Success[JsonValue])
-async def backfill(request: Request, payload: BatchRequest):
+async def backfill(request: Request, payload: BackfillRequest):
     return envelope(request, await forward(request, "warehouse", "/warehouse/backfill", body=payload, method="POST"), "backfill_run")
 
 

@@ -13,6 +13,8 @@ import {
   type DateRange, type Location, type RainfallCoverage, type Status, type Weather
 } from "./data";
 import { DataManagement, MachineLearning } from "./operation-panels";
+import { ForecastPanel } from "./forecast-panel";
+import { RecentRainfall } from "./recent-rainfall";
 import { Analytics, MapSection, Overview } from "./weather-panels";
 import { QueryError, StatePill } from "./ui";
 
@@ -98,11 +100,15 @@ function DashboardBody({ initialRange }: { initialRange: DateRange }) {
   const points = useMemo(() => withWeatherLocations(locations.data ?? [], weather.data ?? []), [locations.data, weather.data]);
   const coverage = useData<RainfallCoverage[]>("rainfall/coverage", { source });
   const selected = points.some((point) => point.code === location) ? location :
+    points.find((point) => point.code === "hai-chau")?.code ??
     points.find((point) => coverage.data?.some((row) => row.location === point.code))?.code ?? points[0]?.code ?? "";
   const selectedCoverage = coverage.data?.find((row) => row.location === selected);
   const activeRange = range ?? recentCoveredRange(selectedCoverage, initialRange);
   const inputRange = draft ?? activeRange;
   const scope = { location: selected, ...activeRange };
+  const recentRainfall = <RecentRainfall location={selected}
+    name={points.find((point) => point.code === selected)?.name ?? selected}
+    weather={weather.data?.find((row) => row.location_code === selected)} />;
 
   function apply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -317,20 +323,27 @@ function DashboardBody({ initialRange }: { initialRange: DateRange }) {
           )}
 
           {section === "Overview" && (
-            <Overview
-              scope={scope}
-              points={points}
-              weather={weather.data ?? []}
-              weatherLoading={weather.isPending}
-              weatherError={Boolean(weather.error)}
-              theme={theme}
-              onSelect={chooseLocation}
-              openMap={() => go("Da Nang Map")}
-            />
+            <>
+              {recentRainfall}
+              <ForecastPanel location={scope.location} />
+              <Overview
+                scope={scope}
+                points={points}
+                weather={weather.data ?? []}
+                weatherLoading={weather.isPending}
+                weatherError={Boolean(weather.error)}
+                theme={theme}
+                onSelect={chooseLocation}
+                openMap={() => go("Da Nang Map")}
+              />
+            </>
           )}
 
           {section === "Rainfall Analytics" && (
-            <Analytics scope={scope} theme={theme} coverage={coverage} />
+            <>
+              {recentRainfall}
+              <Analytics scope={scope} theme={theme} coverage={coverage} />
+            </>
           )}
 
           {section === "Machine Learning" && (
@@ -343,13 +356,16 @@ function DashboardBody({ initialRange }: { initialRange: DateRange }) {
           )}
 
           {section === "Da Nang Map" && (
-            <MapSection
-              scope={scope}
-              theme={theme}
-              points={points}
-              weather={weather.data ?? []}
-              onSelect={chooseLocation}
-            />
+            <>
+              <MapSection
+                scope={scope}
+                theme={theme}
+                points={points}
+                weather={weather.data ?? []}
+                onSelect={chooseLocation}
+              />
+              {recentRainfall}
+            </>
           )}
 
           {section === "Data Management" && <DataManagement locations={points} />}

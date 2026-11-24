@@ -82,6 +82,20 @@ services:
       warehouse-migrate:
         condition: service_completed_successfully
 
+  forecast-refresh:
+    <<: *runtime
+    build: ./services/warehouse-service
+    command: ["python", "/app/scripts/ingest_multimodel_and_ground_gauges.py", "--interval-seconds", "${FLOODINSIGHT_FORECAST_REFRESH_SECONDS:-21600}"]
+    volumes:
+      - ./scripts/ingest_multimodel_and_ground_gauges.py:/app/scripts/ingest_multimodel_and_ground_gauges.py:ro
+    environment:
+      <<: *postgres-environment
+      POSTGRES_HOST: postgres
+      PYTHONPATH: /app
+    depends_on:
+      warehouse-migrate:
+        condition: service_completed_successfully
+
   analysis-service:
     <<: *python-service
     build: ./services/analysis-service

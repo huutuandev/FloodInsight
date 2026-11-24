@@ -24,7 +24,7 @@ The supervised models use rainfall from target days minus 8, 9, and 10; mean rai
 
 Recorded availability uses the latest raw receipt for each day. Retrospective evaluation uses an explicit six-day publication assumption after the local day ends. It evaluates event-time chronology with a lag and does not establish which ERA5 revision existed at each past issuance. Prediction and classification APIs always enforce recorded receipt times, including when serving a model trained in retrospective mode. A single recent archive backfill cannot supply the recorded availability needed to train or verify earlier forecasts. Missing lag days cause HTTP 422. [Open-Meteo historical data and publication delay](https://open-meteo.com/en/docs/historical-weather-api)
 
-Random forest regression compares MAE and RMSE with a persistence baseline using the most recent eligible rain lag, day minus 8. Classification uses a separate random forest with balanced subsampling weights. The default classes are project-defined daily intensity categories:
+XGBoost regression compares MAE and RMSE with a persistence baseline using the most recent eligible rain lag, day minus 8. Classification uses a separate XGBoost model with class-balanced sample weights. Retrain artifacts created with a different feature list before requesting new predictions. The default classes are project-defined daily intensity categories:
 
 | Class | Daily rainfall |
 | --- | --- |
@@ -33,9 +33,9 @@ Random forest regression compares MAE and RMSE with a persistence baseline using
 | Moderate Rain | 10 to less than 25 mm |
 | Heavy Rain | 25 mm or more |
 
-Configure the lower boundaries as `thresholds.light_mm`, `thresholds.moderate_mm`, and `thresholds.heavy_mm` when training. All four classes must occur in the training split. Confusion matrices use the class order above, with actual class on rows and predicted class on columns. Returned probabilities are random forest class estimates. Flood forecasting would require reliable flood-event labels and a separate evaluation.
+Configure the lower boundaries as `thresholds.light_mm`, `thresholds.moderate_mm`, and `thresholds.heavy_mm` when training. All four classes must occur in the training split. Confusion matrices use the class order above, with actual class on rows and predicted class on columns. The classifier returns uncalibrated class scores. Flood forecasting would require reliable flood-event labels and a separate evaluation.
 
-## Measured evaluation
+## Historical random forest benchmark
 
 Validation used real Hải Châu ERA5 data from 2023-06-01 through 2024-02-29 in an isolated PostgreSQL 16 database. Clustering used 274 complete daily rows. The silhouette score was **0.3514** for three clusters of **44, 133, and 97 days**. The first two PCA components explained **54.02% and 23.61%** of scaled feature variance.
 

@@ -5,10 +5,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, Clock3, Database, Layers3, RefreshCw, Sparkles, TrendingUp } from "lucide-react";
 import type { EChartsOption } from "echarts";
 import { Chart } from "./chart";
+import { ForecastPanel } from "./forecast-panel";
 import {
-  displayNumber, localDay, localTime, locationName, request, useCollection, useData,
+  displayNumber, localDay, localTime, locationName, request, useData,
   type Classification, type Cluster, type Evaluation, type Location, type Prediction,
-  type ProviderForecast, type Quality, type Run, type Scope, type Warehouse,
+  type Quality, type Run, type Scope, type Warehouse,
 } from "./data";
 import { Empty, Loading, Pager, Panel, QueryError, Resource, StatePill } from "./ui";
 
@@ -114,30 +115,14 @@ function Confusion({ labels, matrix, theme }: { labels: string[]; matrix: number
 
 export function MachineLearning({ scope, filterForecasts, locations, theme }: { scope: Scope; filterForecasts: boolean; locations: Location[]; theme: Theme }) {
   const clusters = useData<Cluster[]>("clustering/results", { ...scope, limit: 500 });
-  const providerForecasts = useCollection<ProviderForecast>("weather/forecasts", scope, Boolean(scope.location));
   const forecastQuery = filterForecasts ? scope : { location: scope.location };
   const predictions = useData<Prediction[]>("predictions/results", { ...forecastQuery, limit: 8 });
   const classification = useData<Classification[]>("classifications/results", { ...forecastQuery, limit: 8 });
   const clusterMetrics = useData<Evaluation>("clustering/metrics");
   const predictMetrics = useData<Evaluation>("predictions/metrics");
   const classMetrics = useData<Evaluation>("classifications/metrics");
-  const dailyForecasts = new Map<string, Map<string, { total: number; hours: number }>>();
-  const forecastModels = new Set<string>();
-  for (const row of providerForecasts.data ?? []) {
-    const rain = row.payload.values?.precipitation;
-    if (rain == null) continue;
-    const date = localDay(row.valid_at);
-    const model = row.payload.model ?? row.source;
-    forecastModels.add(model);
-    const day = dailyForecasts.get(date) ?? new Map<string, { total: number; hours: number }>();
-    const value = day.get(model) ?? { total: 0, hours: 0 };
-    value.total += rain;
-    value.hours += 1;
-    day.set(model, value);
-    dailyForecasts.set(date, day);
-  }
-
   return <>
+    <ForecastPanel location={scope.location} />
     <Panel
       title="Phân cụm hình thế thời tiết (K-Means Clustering)"
       headingLabel="Weather clusters"
@@ -155,21 +140,6 @@ export function MachineLearning({ scope, filterForecasts, locations, theme }: { 
         <span>Hệ số Silhouette: <strong style={{ color: "var(--ocean)" }}>{displayNumber(value.metrics.silhouette_score, 3)}</strong></span>
         {value.version && <span>Phiên bản: <code>{value.version.slice(0, 10)}</code></span>}
       </div>}</Resource>
-    </Panel>
-
-    <Panel title="Dự báo mưa từ mô hình thời tiết" headingLabel="Provider rainfall forecast"
-      subtitle="Tổng lượng mưa ngày từ các giờ dự báo đang lưu trong kho dữ liệu.">
-      <p className="chart-note">Đây là đầu ra mô hình thời tiết, không phải quan trắc trạm hoặc xác suất chắc chắn. Số giờ đi kèm giúp nhận biết ngày chưa đủ dữ liệu.</p>
-      <Resource query={providerForecasts}>
-        {() => dailyForecasts.size ? <div className="table-wrap"><table>
-          <thead><tr><th>Ngày mục tiêu (ICT)</th>{[...forecastModels].sort().map((model) =>
-            <th key={model}>{forecastName(model)}</th>)}</tr></thead>
-          <tbody>{[...dailyForecasts].sort(([a], [b]) => a.localeCompare(b)).map(([date, models]) => <tr key={date}>
-            <td>{date}</td>{[...forecastModels].sort().map((model) =>
-              <td key={model}>{forecastCell(models.get(model))}</td>)}</tr>)}</tbody>
-        </table></div> : <Empty title="Không có dự báo từ nhà cung cấp trong khoảng đã chọn"
-          detail="Hãy chọn các ngày thuộc kỳ dự báo hiện có và nhập snapshot forecast mới nhất." />}
-      </Resource>
     </Panel>
 
     <div className="two-col grid">
@@ -229,6 +199,7 @@ export function MachineLearning({ scope, filterForecasts, locations, theme }: { 
         <Resource query={predictMetrics} missingModel>{(data) => {
           const test = data.metrics.test;
           const regression = test?.xgboost ?? test?.random_forest;
+          const baseline = test?.lag_8_persistence ?? test?.lag_1_persistence;
           return regression ? <div className="table-wrap"><table>
             <caption>Đánh giá chế độ {data.scope?.availability ?? "Recorded"}</caption>
             <thead><tr><th>Mô hình</th><th>MAE (mm)</th><th>RMSE (mm)</th></tr></thead>
@@ -238,10 +209,10 @@ export function MachineLearning({ scope, filterForecasts, locations, theme }: { 
                 <td><strong style={{ color: "var(--ocean)" }}>{displayNumber(regression.mae_mm, 2)}</strong></td>
                 <td><strong>{displayNumber(regression.rmse_mm, 2)}</strong></td>
               </tr>
-              {(test.lag_1_persistence ?? test.lag_8_persistence) && <tr>
-                <td>Persistence Baseline</td>
-                <td>{displayNumber((test.lag_1_persistence ?? test.lag_8_persistence)?.mae_mm, 2)}</td>
-                <td>{displayNumber((test.lag_1_persistence ?? test.lag_8_persistence)?.rmse_mm, 2)}</td>
+              {baseline && <tr>
+                <td>{test?.lag_8_persistence ? "Đối chứng: lượng mưa 8 ngày trước" : "Đối chứng: lượng mưa 1 ngày trước"}</td>
+                <td>{displayNumber(baseline.mae_mm, 2)}</td>
+                <td>{displayNumber(baseline.rmse_mm, 2)}</td>
               </tr>}
             </tbody>
           </table></div> : <Empty title="Chưa có chỉ số đánh giá mô hình" />;
@@ -268,18 +239,6 @@ export function MachineLearning({ scope, filterForecasts, locations, theme }: { 
       </Panel>
     </div>
   </>;
-}
-
-function forecastCell(value?: { total: number; hours: number }) {
-  return value ? <>{displayNumber(value.total)} mm <small>({value.hours}/24 h)</small></> : "—";
-}
-
-function forecastName(model: string) {
-  const names: Record<string, string> = {
-    ecmwf_ifs025: "ECMWF IFS (mm)", gfs_seamless: "GFS Seamless (mm)",
-    "open-meteo-forecast-api": "Open-Meteo forecast (mm)",
-  };
-  return names[model] ?? `${model} (mm)`;
 }
 
 function Runs({ rows, warehouse = false }: { rows: Run[]; warehouse?: boolean }) {

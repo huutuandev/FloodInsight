@@ -30,7 +30,7 @@ export type Classification = {
 };
 export type ProviderForecast = {
   location: string; source: string; valid_at: string; issued_at: string | null;
-  received_at: string; payload: { model?: string; values?: Record<string, number | null> };
+  received_at: string; payload: { interval_seconds?: number; values?: Record<string, number | null> };
 };
 export type Evaluation = {
   version: string;
@@ -93,10 +93,11 @@ export function useData<T>(path: string, params?: Params, enabled = true, poll?:
   });
 }
 
-export function useCollection<T>(path: string, params: Params, enabled = true) {
+export function useCollection<T>(path: string, params: Params, enabled = true, poll?: number) {
   return useQuery({
     queryKey: [path, params, "all"],
     enabled,
+    refetchInterval: poll,
     queryFn: async ({ signal }) => {
       const all: T[] = [];
       const limit = 500;

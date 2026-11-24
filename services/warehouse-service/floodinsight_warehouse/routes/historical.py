@@ -5,7 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ..config import DatabaseSettings
 from ..repositories.historical import HistoricalRepository, WarehouseBusy
-from ..schemas.historical import DateRange, ETLRequest, QualityReport, RunResult, WarehouseStatus
+from ..schemas.historical import BackfillRequest, ETLRequest, QualityReport, RunResult, WarehouseStatus
 from ..services.pipeline import HistoricalPipeline
 
 router = APIRouter(prefix="/warehouse", tags=["historical warehouse"])
@@ -22,7 +22,7 @@ def run_operation(request: Request, operation, window):
 
 
 @router.post("/backfill", response_model=RunResult)
-def backfill(window: DateRange, request: Request):
+def backfill(window: BackfillRequest, request: Request):
     return run_operation(request, "backfill", window)
 
 

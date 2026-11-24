@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from uuid import uuid4
 
-from sqlalchemy import create_engine, delete, func, insert, select, text, update
+from sqlalchemy import create_engine, delete, func, insert, null, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.pool import NullPool
 
@@ -97,13 +97,27 @@ class HistoricalRepository:
                      valid_at=row.valid_at, received_at=row.received_at, payload=row.payload)
                 for row in records
             ]
-            statement = pg_insert(raw).on_conflict_do_nothing(
-                index_elements=["source_id", "source_location_key", "valid_at"]
+            statement = pg_insert(raw)
+            # Fill values published late without replacing values already acquired.
+            old_values = func.jsonb_strip_nulls(raw.c.payload["values"])
+            new_values = func.jsonb_strip_nulls(statement.excluded.payload["values"]).op("||")(old_values)
+            statement = statement.on_conflict_do_update(
+                index_elements=["source_id", "source_location_key", "valid_at"],
+                set_={
+                    "payload": func.jsonb_set(raw.c.payload, text("'{values}'"), new_values),
+                    "received_at": func.greatest(raw.c.received_at, statement.excluded.received_at),
+                    "ingestion_run_id": statement.excluded.ingestion_run_id,
+                },
+                where=new_values != old_values,
             ).returning(raw.c.id)
             inserted = len(conn.scalars(statement, rows).all())
-            conn.execute(insert(HistoricalBatch).values(
+            conn.execute(pg_insert(HistoricalBatch).values(
                 source_id=source_id, location_code=point.code, start_date=start, end_date=end,
                 ingestion_run_id=ingestion_id, backfill_run_id=run_id,
+            ).on_conflict_do_update(
+                index_elements=["source_id", "location_code", "start_date", "end_date"],
+                set_={"ingestion_run_id": ingestion_id, "backfill_run_id": run_id,
+                      "etl_run_id": None, "quality": null()},
             ))
             progress = progress | {
                 "batches_processed": progress["batches_processed"] + 1,

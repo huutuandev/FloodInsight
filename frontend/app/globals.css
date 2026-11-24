@@ -998,97 +998,62 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   position: absolute;
   top: 10px;
   right: 10px;
-  z-index: 500;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid #CBD5E1;
+  z-index: 800;
+  display: grid;
+  gap: 7px;
+  width: min(230px, calc(100% - 56px));
+  background: var(--card);
+  border: 1px solid var(--stroke-strong);
   border-radius: 10px;
-  padding: 9px 12px;
-  box-shadow: 0 4px 14px rgba(23, 54, 93, 0.14);
-  color: #243449;
-  font-size: 11.5px;
-  min-width: 195px;
-}
-.dashboard[data-theme="dark"] .radar-overlay-controls {
-  background: rgba(19, 34, 53, 0.92);
-  border-color: var(--stroke-strong);
+  padding: 10px;
+  box-shadow: var(--shadow);
   color: var(--text);
+  font-size: 12px;
+}
+.radar-header, .radar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
 }
 .radar-header {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 8px;
 }
 .radar-title {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-weight: 750;
-  color: #17365D;
+  gap: 5px;
+  color: var(--heading);
 }
-.dashboard[data-theme="dark"] .radar-title {
-  color: #E2E8F0;
-}
-.radar-pulse-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #299D70;
-}
-.radar-toggle-btn {
-  background: #F1F5F9;
-  border: 1px solid #CBD5E1;
-  color: #243449;
-  padding: 3px 9px;
+.radar-button {
+  background: var(--card-hover);
+  border: 1px solid var(--stroke);
   border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
+  color: var(--text);
+  font: inherit;
+  min-height: 29px;
+  padding: 3px 7px;
   cursor: pointer;
-  transition: all 0.15s ease;
 }
-.radar-toggle-btn:hover {
-  background: #E2E8F0;
-}
-.radar-toggle-btn.active {
-  background: #2878B5;
-  color: #FFFFFF;
-  font-weight: 700;
-  border-color: #2878B5;
+.radar-button:hover, .radar-button[aria-pressed="true"] {
+  color: var(--ocean);
+  border-color: var(--ocean);
 }
 .radar-meta {
-  display: flex;
-  justify-content: space-between;
-  font-size: 10px;
-  color: #64748B;
-  border-top: 1px solid #E2E8F0;
-  padding-top: 4px;
-  margin-top: 2px;
-}
-.dashboard[data-theme="dark"] .radar-meta {
-  border-top-color: var(--stroke);
   color: var(--muted);
+  line-height: 1.35;
 }
-.radar-scale {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 3px;
+.radar-timeline {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--ocean);
 }
-.radar-scale-bar {
-  height: 4px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, #299D70 0%, #E9A23B 45%, #E67E22 72%, #D9534F 100%);
+
+.recent-rain-today > th, .recent-rain-today > td {
+  background: var(--card-hover);
 }
-.radar-scale-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 9px;
-  color: #64748B;
+.recent-rain-snapshot {
+  margin: 0 0 10px;
 }
 
 .dashboard[data-theme="dark"] .leaflet-tile-pane {
@@ -1534,10 +1499,6 @@ caption {
   }
   .flood-alert-banner {
     padding: 11px 12px;
-  }
-  .radar-overlay-controls {
-    min-width: 165px;
-    padding: 7px 9px;
   }
 }
 

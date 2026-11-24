@@ -28,6 +28,10 @@ class DateRange(BaseModel):
         return self
 
 
+class BackfillRequest(DateRange):
+    refresh_incomplete: bool = False
+
+
 class ETLRequest(DateRange):
     max_batches: Annotated[int, Field(ge=1, le=120)] = 20
     reprocess: bool = False

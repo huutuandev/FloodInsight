@@ -22,7 +22,14 @@ class HistoricalPipeline:
             try:
                 checkpoints = repo.checkpoints(conn, source_id, window)
                 if operation == "backfill":
-                    existing = {(b["start_date"], b["end_date"], b["location_code"]) for b in checkpoints}
+                    existing = {
+                        (b["start_date"], b["end_date"], b["location_code"])
+                        for b in checkpoints
+                        if not (
+                            getattr(window, "refresh_incomplete", False) and b["quality"] is not None
+                            and b["quality"]["rainfall_coverage_hours"] < b["quality"]["expected_hours"]
+                        )
+                    }
                     pending = [
                         (point, start, end)
                         for start, end in month_batches(window.start_date, window.end_date)

@@ -134,7 +134,7 @@ export function Overview({ scope, theme, points, weather, onSelect, openMap, wea
 
     <div className="overview-grid grid">
       <RainfallPanel scope={scope} theme={theme} />
-      <Panel title="Các điểm lấy mẫu tại Đà Nẵng" headingLabel="Sampling network" subtitle="Điểm dữ liệu thời tiết và lớp radar mưa"
+      <Panel title="Các điểm lấy mẫu tại Đà Nẵng" headingLabel="Sampling network" subtitle="Mở bản đồ đầy đủ để xem radar mưa"
         action={<button className="icon-button" onClick={openMap} aria-label="Open Da Nang map"><ArrowUpRight size={18} /></button>}>
         <StationMap compact points={points} selected={scope.location} onSelect={onSelect} latest={latest} weather={weather} />
         <div className="mini-map-footer">
@@ -204,7 +204,7 @@ export function MapSection({ scope, theme, points, weather, onSelect }: AreaProp
       <Panel
         title="Bản đồ không gian GIS & Radar mây mưa Đà Nẵng"
         headingLabel="Da Nang sampling map"
-        subtitle="Hiển thị phân vùng lượng mưa ngày và lớp phủ ảnh radar RainViewer"
+        subtitle="Màu điểm theo ngày ERA5 gần nhất trong bộ lọc. RainViewer phát lại ảnh radar khoảng 2 giờ gần nhất."
         action={<label className="checkbox"><input type="checkbox" aria-label="Selected point only" checked={onlySelected}
           onChange={(event) => setOnlySelected(event.target.checked)} />Chỉ xem trạm đã chọn</label>}
       >

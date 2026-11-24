@@ -78,6 +78,10 @@ class BatchRequest(DateRange):
     max_batches: int | None = Field(None, ge=1, le=120)
 
 
+class BackfillRequest(BatchRequest):
+    refresh_incomplete: bool = False
+
+
 class ETLRequest(BatchRequest):
     reprocess: bool = False
     after_batch_id: int = Field(0, ge=0, le=9223372036854775807)

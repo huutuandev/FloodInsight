@@ -41,10 +41,10 @@ MEASURES = {
 SOURCES = (
     {"code": "open-meteo-ecmwf-ifs", "provider": "Open-Meteo / ECMWF",
      "dataset": "ECMWF IFS 0.25 forecast", "model": "ecmwf_ifs025",
-     "name": "ECMWF IFS 0.25", "reference": "https://open-meteo.com/en/docs"},
+     "name": "ECMWF IFS 0.25", "reference": "https://www.ecmwf.int/en/forecasts/datasets/open-data"},
     {"code": "open-meteo-gfs-seamless", "provider": "Open-Meteo / NOAA",
      "dataset": "GFS Seamless forecast", "model": "gfs_seamless",
-     "name": "NOAA GFS Seamless", "reference": "https://open-meteo.com/en/docs"},
+     "name": "NOAA GFS Seamless", "reference": "https://www.emc.ncep.noaa.gov/emc/pages/numerical_forecast_systems/gfs.php"},
 )
 
 
@@ -70,11 +70,12 @@ def exclusive_import(engine):
         connection.close()
 
 
-def fetch_forecast(http_url, point, model, days, timeout):
+def fetch_forecast(http_url, point, model, days, timeout, past_days=0):
     query = urlencode({
         "latitude": point["latitude"], "longitude": point["longitude"],
         "hourly": ",".join(VARIABLES), "models": model,
-        "forecast_days": days, "timezone": "GMT", "timeformat": "unixtime",
+        # Today plus the requested future days and one UTC boundary day.
+        "forecast_days": days + 2, "past_days": past_days, "timezone": "GMT", "timeformat": "unixtime",
         "temperature_unit": "celsius", "wind_speed_unit": "ms", "precipitation_unit": "mm",
     })
     request = Request(f"{http_url}?{query}", headers={"User-Agent": "FloodInsight/1.0"})
@@ -92,7 +93,7 @@ def fetch_forecast(http_url, point, model, days, timeout):
     if payload.get("utc_offset_seconds") != 0:
         raise ImportErrorDetail("provider response is not in UTC")
     units = payload.get("hourly_units")
-    if not isinstance(units, dict) or any(units.get(name) != unit for name, unit in UNITS.items()):
+    if not isinstance(units, dict) or any(units.get(name) != unit for name, unit in (UNITS | {"time": "unixtime"}).items()):
         raise ImportErrorDetail("provider returned unexpected or missing measurement units")
     for coordinate in ("latitude", "longitude"):
         value = payload.get(coordinate)
@@ -178,8 +179,8 @@ def finish_run(engine, run_id, status, count, error=None):
         """), {"status": status, "count": count, "error": error, "id": run_id})
 
 
-def import_point(engine, source_id, run_id, point, model, days, timeout, api_url):
-    received, hourly, instants, response = fetch_forecast(api_url, point, model, days, timeout)
+def import_point(engine, source_id, run_id, point, model, days, timeout, api_url, past_days):
+    received, hourly, instants, response = fetch_forecast(api_url, point, model, days, timeout, past_days)
     grid = {key: response.get(key) for key in ("latitude", "longitude", "elevation")}
     records = []
     for index, instant in enumerate(instants):
@@ -191,26 +192,29 @@ def import_point(engine, source_id, run_id, point, model, days, timeout, api_url
         records.append((instant, values, measures))
 
     inserted = 0
-    with engine.begin() as conn:
-        for instant, values, _measures in records:
-            payload = {"kind": "hourly", "model": model, "location": {
+    params = []
+    for instant, values, _measures in records:
+        payload = {"kind": "hourly", "model": model, "location": {
                 "code": point["code"], "name": point["name"], "latitude": float(point["latitude"]),
                 "longitude": float(point["longitude"])}, "grid": grid,
-                "issued_at": None,
+                "issued_at": None, "interval_seconds": 3600,
                 "units": UNITS, "values": values}
-            result = conn.execute(text("""
+        params.append({"source": source_id, "run": run_id, "location": point["code"],
+                       "valid": instant, "received": received,
+                       "digest": hashlib.sha256(json.dumps(
+                           payload, sort_keys=True, separators=(",", ":"), allow_nan=False
+                       ).encode()).hexdigest(), "payload": json.dumps(payload, allow_nan=False)})
+    if not params or not any(values["precipitation"] is not None for _, values, _ in records):
+        raise ImportErrorDetail("provider returned no usable precipitation")
+    with engine.begin() as conn:
+        inserted = conn.execute(text("""
                 INSERT INTO raw_weather_forecasts
                   (source_id, ingestion_run_id, source_location_key, valid_at, issued_at,
                    received_at, snapshot_hash, payload)
                 VALUES (:source, :run, :location, :valid, NULL, :received, :digest, :payload)
                 ON CONFLICT (source_id, source_location_key, valid_at, snapshot_hash)
                   WHERE snapshot_hash IS NOT NULL DO NOTHING
-            """), {"source": source_id, "run": run_id, "location": point["code"],
-                   "valid": instant, "received": received,
-                   "digest": hashlib.sha256(json.dumps(
-                       payload, sort_keys=True, separators=(",", ":"), allow_nan=False
-                   ).encode()).hexdigest(), "payload": json.dumps(payload, allow_nan=False)})
-            inserted += result.rowcount
+            """), params).rowcount
     return inserted
 
 
@@ -238,10 +242,12 @@ def run_import(args):
                     "hai-chau", "thanh-khe", "lien-chieu", "cam-le", "ngu-hanh-son",
                     "son-tra", "hoa-vang", "hoa-bac", "hoa-khuong",
                 }
-                if len(codes) != len(set(codes)) or set(codes) != expected_codes:
+                if not expected_codes.issubset(codes):
                     raise RuntimeError(
-                        "dim_location does not contain exactly the nine configured Da Nang points"
+                        "dim_location does not contain all nine configured Da Nang points"
                     )
+                points = sorted((point for point in points if point["code"] in expected_codes),
+                                key=lambda point: (point["code"] != "hai-chau", point["code"]))
                 for point in points:
                     for key, lower, upper in (("latitude", -90, 90), ("longitude", -180, 180)):
                         value = point[key]
@@ -261,7 +267,7 @@ def run_import(args):
                         try:
                             inserted += import_point(engine, source_id, run_id, point,
                                                      source["model"], args.days,
-                                                     args.timeout, args.url)
+                                                     args.timeout, args.url, args.past_days)
                             LOG.info("Imported %s %s", source["code"], point["code"])
                             break
                         except Exception as error:
@@ -285,6 +291,8 @@ def run_import(args):
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--days", type=int, choices=range(1, 8), default=7)
+    parser.add_argument("--past-days", type=int, choices=range(0, 15), default=8)
+    parser.add_argument("--interval-seconds", type=int, default=0, help="Repeat import; 0 runs once")
     parser.add_argument("--timeout", type=float, default=20)
     parser.add_argument("--retries", type=int, default=3)
     parser.add_argument("--url", default=API_URL)
@@ -293,4 +301,16 @@ def parse_args():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    run_import(parse_args())
+    args = parse_args()
+    if args.interval_seconds < 0:
+        raise SystemExit("--interval-seconds must be nonnegative")
+    while True:
+        try:
+            run_import(args)
+        except Exception:
+            if not args.interval_seconds:
+                raise
+            LOG.exception("Forecast refresh failed")
+        if not args.interval_seconds:
+            break
+        time.sleep(args.interval_seconds)
