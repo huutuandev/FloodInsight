@@ -14,7 +14,7 @@ These points represent sampling locations. They do not represent administrative 
 
 ## Timing, storage, and recovery
 
-- The service saves modeled current conditions and stitched hourly values in `raw_weather_forecasts`. Open-Meteo derives current conditions from weather models, and the Forecast API does not give a model initialization timestamp for each value. `valid_at` holds the provider’s timestamp, `received_at` holds response receipt time, and `issued_at` remains NULL for this feed. Accumulated precipitation retains Open-Meteo’s interval-ending convention and is stored with the interval length. The existing observation and fact tables remain available for later processing. [Forecast API documentation](https://open-meteo.com/en/docs) · [Open-Meteo model updates](https://open-meteo.com/en/docs/model-updates)
+- The service saves modeled current conditions and stitched hourly values in `raw_weather_forecasts`. Open-Meteo derives current conditions from weather models, and the Forecast API does not give a model initialization timestamp for each value. `valid_at` holds the provider’s timestamp, `received_at` holds response receipt time, and `issued_at` remains NULL for this feed. Accumulated precipitation retains Open-Meteo’s interval-ending convention and is stored with the interval length. The warehouse materializes hourly records into `fact_weather_forecast_hourly`, retaining receipt time separately from provider issue time. [Forecast API documentation](https://open-meteo.com/en/docs) · [Open-Meteo model updates](https://open-meteo.com/en/docs/model-updates)
 - An additive migration extends the existing raw forecast and run tables. It keeps the issue-time key for providers that report issuance. This collector deduplicates by feed, sample point, valid time, and a SHA-256 digest of the validated snapshot. Identical content retains its first receipt time, including when it reappears after a revision. A successful poll may insert zero records. The batch and successful run status commit together.
 - APScheduler attempts a poll every five minutes by default, with coalescing and a one-instance limit. A PostgreSQL advisory lock also prevents overlaps with manual requests and other workers. The interval governs polling. Provider data can update on a different cadence. [APScheduler configuration](https://apscheduler.readthedocs.io/en/3.x/userguide.html) · [Open-Meteo model updates](https://open-meteo.com/en/docs/model-updates)
 - Network failures and retryable HTTP responses use bounded retries, with a default of three attempts and a 12-second request deadline. A poll validates all five locations before writing any snapshots. Run history records failed polls and a short error reason. The next worker that acquires the lock marks an interrupted run as failed before starting a new run.
@@ -29,6 +29,18 @@ These points represent sampling locations. They do not represent administrative 
 | `GET /ingestion/status` | Scheduler settings, next scheduled execution for this process, and the latest persisted run. |
 | `GET /ingestion/latest` | Most recent stored modeled-current snapshot for each sampled location, sorted by location code. |
 | `GET /ingestion/history?limit=20&offset=0` | Runs newest first, including start and finish times, trigger, outcome, inserted count, and error if any. |
+
+## Forecast fact materialization
+
+Run `POST /warehouse/forecast-etl/run` with an inclusive local date range of up to 31 days to upsert hourly forecast measurements from raw hourly snapshots. The API does not provide model initialization times, so the fact keeps `issued_at` NULL and stores `received_at` in `snapshot_received_at`; it does not invent an issue time. Rain is assigned to the interval beginning one hour before its provider `valid_at`, matching Open-Meteo's interval-ending convention.
+
+```sh
+curl -X POST http://127.0.0.1:8002/warehouse/forecast-etl/run \
+  -H 'Content-Type: application/json' \
+  -d '{"start_date":"2026-11-25","end_date":"2026-11-25"}'
+```
+
+Only available hourly snapshots are loaded. Check daily coverage before comparing a partial forecast day with a full-day model prediction.
 
 ## Testing
 
