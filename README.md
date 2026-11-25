@@ -27,19 +27,19 @@ Each Python service has an independently buildable Docker image, runtime and tes
 
 | Service | Planned responsibilities |
 | --- | --- |
-| ingestion-service | Fetch real observations and historical records from verified providers. Schedule collection with APScheduler. |
-| warehouse-service | Validate and transform data with Pandas. Own the PostgreSQL schema, loading contracts, and Alembic migrations. |
-| analysis-service | Compute rainfall time series, aggregations, and descriptive statistics with Pandas and NumPy. |
-| clustering-service | Group observations or locations using scikit-learn. |
-| prediction-service | Train and evaluate rainfall regression models and serve forecasts. |
-| classification-service | Train and evaluate models for documented rainfall categories. |
-| api-service | Expose dashboard-facing endpoints and call internal services over HTTP. |
+| ingestion-service | Fetch and validate Open-Meteo model snapshots and record scheduled and manual runs. |
+| warehouse-service | Backfill Open-Meteo ERA5, run historical ETL, expose data quality, and own warehouse migrations. |
+| analysis-service | Generate and regenerate time-series patterns from warehouse data with Pandas and NumPy. |
+| clustering-service | Cluster complete daily weather periods with K-Means and expose PCA coordinates and evaluation. |
+| prediction-service | Train and serve a versioned random forest for next-day rainfall totals. |
+| classification-service | Train and serve a versioned random forest for next-day rainfall intensity classes. |
+| api-service | Route REST requests to all backend services and report dependency health. |
 | frontend | Present rainfall analytics and geographic layers with Next.js App Router, Tailwind CSS, Apache ECharts, and React Leaflet. |
 | postgres | Persist warehouse data in PostgreSQL 16 on a named volume. |
 
-Planned flow is from weather providers through ingestion into the warehouse. Analytics and ML services consume warehouse data through contracts to be defined. The API exposes results to the dashboard. The ML services have Joblib available for model persistence. Charts, maps, weather providers, ingestion schedules, service-to-service contracts, and warehouse tables are future work.
+Planned flow is from weather providers through ingestion into the warehouse. Analytics and ML services consume warehouse data through contracts to be defined. The API exposes results to the dashboard. The ML services have Joblib available for model persistence. The ingestion service captures Open-Meteo modeled weather snapshots. The warehouse backfills ERA5 historical reanalysis. Charts, maps, and analytics data contracts are future work.
 
-Each Python service exposes `GET /health` as a liveness check. The warehouse starts after PostgreSQL can run an authenticated query, and the frontend starts after the API passes its health check. Services share the project-scoped `floodinsight-internal` bridge network. The warehouse connects to `postgres:5432`, and the frontend forwards `/api/health` to `api-service:8000`. Only the frontend and public API publish ports, both on the host loopback interface.
+Each Python service exposes `GET /health` as a liveness check. The warehouse migration job runs after PostgreSQL can execute an authenticated query. Ingestion and the warehouse API start after migrations succeed. The frontend starts after the public API passes its health check. Services share the project-scoped `floodinsight-internal` bridge network. The warehouse connects to `postgres:5432`, and the frontend forwards `/api/health` to `api-service:8000`. The frontend, public API, ingestion API, warehouse API, analysis API, and the three ML APIs publish ports on the host loopback interface.
 
 ## Docker development
 
@@ -63,8 +63,20 @@ docker compose down
 
 Python services emit JSON records with timestamp, severity, logger, and message. Docker stores all container output with its rotating JSON log driver. Next.js and PostgreSQL retain their native log message format inside those Docker records.
 
-PostgreSQL data persists in the named `postgres-data` volume after `docker compose down`. PostgreSQL applies the user, password, and database settings when initializing an empty data directory. The Alembic revision directory starts empty. Apply future committed revisions with `docker compose exec warehouse-service alembic upgrade head`.
+PostgreSQL data persists in the named `postgres-data` volume after `docker compose down`. PostgreSQL applies the user, password, and database settings when initializing an empty data directory. Compose applies warehouse migrations automatically. Apply them explicitly with `docker compose exec warehouse-service alembic upgrade head` when needed. See the [warehouse design and ERD](docs/warehouse-schema.md) for table grains, replay keys, timezone behavior, and verification instructions.
 
+
+The [Open-Meteo ingestion guide](docs/ingestion.md) documents sampling points, scheduling, timestamp semantics, and the ingestion REST API on `localhost:8001`.
+
+The [historical ETL guide](docs/historical-etl.md) documents checkpointed archive downloads, aggregation, data quality, and the warehouse REST API on `localhost:8002`.
+
+See the [time-series analysis guide](docs/time-series-analysis.md) for pattern generation, ECharts responses, and demo recovery on `localhost:8003`.
+
+See the [machine-learning guide](docs/machine-learning.md) for the three model APIs, artifact lifecycle, and measured evaluation.
+
+See the [REST API gateway guide](docs/api-gateway.md) for routes, filters, response envelopes, and manual operations.
+
+See the [dashboard guide](docs/dashboard.md) for the frontend, data filters, and browser verification.
 
 ## Local development and tests
 
@@ -90,6 +102,6 @@ Use `npm run dev` to run the dashboard locally.
 ## Future phases
 
 1. Validate provider coverage, licensing, units, and time zone conventions for Da Nang observations.
-2. Define warehouse granularity, dimensions, migrations, replay-safe ETL, and data quality checks.
+2. Expand historical source coverage and the quality checks as additional datasets are added.
 3. Implement time-series aggregation and evaluate clustering, prediction, and classification with chronological validation where applicable.
 4. Define API contracts and connect the dashboard charts and geographic layers to real results.

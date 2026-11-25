@@ -7,3 +7,4 @@ numpy>=2,<3
 scikit-learn>=1.6,<2
 joblib>=1.4,<2
 python-json-logger>=3.3,<5
+psycopg[binary]>=3.2,<4

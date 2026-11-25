@@ -5,3 +5,4 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="FLOODINSIGHT_PREDICTION_")
 
     environment: str = "development"
+    artifact_dir: str = "/models"

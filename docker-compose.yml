@@ -1,3 +1,4 @@
+
 name: floodinsight
 
 x-runtime: &runtime
@@ -34,6 +35,32 @@ services:
       - ./services/ingestion-service/floodinsight_ingestion:/app/floodinsight_ingestion:ro
     environment:
       FLOODINSIGHT_INGESTION_ENVIRONMENT: ${FLOODINSIGHT_INGESTION_ENVIRONMENT:-development}
+      FLOODINSIGHT_INGESTION_OPEN_METEO_URL: ${FLOODINSIGHT_INGESTION_OPEN_METEO_URL:-https://api.open-meteo.com/v1/forecast}
+      FLOODINSIGHT_INGESTION_SCHEDULER_ENABLED: ${FLOODINSIGHT_INGESTION_SCHEDULER_ENABLED:-true}
+      FLOODINSIGHT_INGESTION_INTERVAL_SECONDS: ${FLOODINSIGHT_INGESTION_INTERVAL_SECONDS:-300}
+      FLOODINSIGHT_INGESTION_TIMEOUT_SECONDS: ${FLOODINSIGHT_INGESTION_TIMEOUT_SECONDS:-12}
+      FLOODINSIGHT_INGESTION_MAX_ATTEMPTS: ${FLOODINSIGHT_INGESTION_MAX_ATTEMPTS:-3}
+      FLOODINSIGHT_INGESTION_FORECAST_HOURS: ${FLOODINSIGHT_INGESTION_FORECAST_HOURS:-24}
+      <<: *postgres-environment
+      POSTGRES_HOST: postgres
+    ports:
+      - "127.0.0.1:${INGESTION_PORT:-8001}:8000"
+    depends_on:
+      warehouse-migrate:
+        condition: service_completed_successfully
+
+  warehouse-migrate:
+    <<: *runtime
+    build: ./services/warehouse-service
+    command: ["alembic", "upgrade", "head"]
+    volumes:
+      - ./services/warehouse-service/migrations:/app/migrations:ro
+    environment:
+      <<: *postgres-environment
+      POSTGRES_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   warehouse-service:
     <<: *python-service
@@ -44,11 +71,16 @@ services:
       - ./services/warehouse-service/migrations:/app/migrations:ro
     environment:
       FLOODINSIGHT_WAREHOUSE_ENVIRONMENT: ${FLOODINSIGHT_WAREHOUSE_ENVIRONMENT:-development}
+      FLOODINSIGHT_WAREHOUSE_ARCHIVE_URL: ${FLOODINSIGHT_WAREHOUSE_ARCHIVE_URL:-https://archive-api.open-meteo.com/v1/archive}
+      FLOODINSIGHT_WAREHOUSE_ARCHIVE_ATTEMPTS: ${FLOODINSIGHT_WAREHOUSE_ARCHIVE_ATTEMPTS:-3}
+      FLOODINSIGHT_WAREHOUSE_ARCHIVE_TIMEOUT_SECONDS: ${FLOODINSIGHT_WAREHOUSE_ARCHIVE_TIMEOUT_SECONDS:-30}
       <<: *postgres-environment
       POSTGRES_HOST: postgres
+    ports:
+      - "127.0.0.1:${WAREHOUSE_PORT:-8002}:8000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      warehouse-migrate:
+        condition: service_completed_successfully
 
   analysis-service:
     <<: *python-service
@@ -58,33 +90,73 @@ services:
       - ./services/analysis-service/floodinsight_analysis:/app/floodinsight_analysis:ro
     environment:
       FLOODINSIGHT_ANALYSIS_ENVIRONMENT: ${FLOODINSIGHT_ANALYSIS_ENVIRONMENT:-development}
+      <<: *postgres-environment
+      POSTGRES_HOST: postgres
+    ports:
+      - "127.0.0.1:${ANALYSIS_PORT:-8003}:8000"
+    depends_on:
+      warehouse-migrate:
+        condition: service_completed_successfully
 
   clustering-service:
     <<: *python-service
-    build: ./services/clustering-service
+    build:
+      context: ./services/clustering-service
+      additional_contexts:
+        ml_common: ./services/ml-common
     command: ["python", "-m", "uvicorn", "floodinsight_clustering.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/floodinsight_clustering", "--log-config", "/etc/floodinsight/logging.json"]
     volumes:
       - ./services/clustering-service/floodinsight_clustering:/app/floodinsight_clustering:ro
+      - clustering-models:/models
     environment:
       FLOODINSIGHT_CLUSTERING_ENVIRONMENT: ${FLOODINSIGHT_CLUSTERING_ENVIRONMENT:-development}
+      <<: *postgres-environment
+      POSTGRES_HOST: postgres
+    ports:
+      - "127.0.0.1:${CLUSTERING_PORT:-8004}:8000"
+    depends_on:
+      warehouse-migrate:
+        condition: service_completed_successfully
 
   prediction-service:
     <<: *python-service
-    build: ./services/prediction-service
+    build:
+      context: ./services/prediction-service
+      additional_contexts:
+        ml_common: ./services/ml-common
     command: ["python", "-m", "uvicorn", "floodinsight_prediction.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/floodinsight_prediction", "--log-config", "/etc/floodinsight/logging.json"]
     volumes:
       - ./services/prediction-service/floodinsight_prediction:/app/floodinsight_prediction:ro
+      - prediction-models:/models
     environment:
       FLOODINSIGHT_PREDICTION_ENVIRONMENT: ${FLOODINSIGHT_PREDICTION_ENVIRONMENT:-development}
+      <<: *postgres-environment
+      POSTGRES_HOST: postgres
+    ports:
+      - "127.0.0.1:${PREDICTION_PORT:-8005}:8000"
+    depends_on:
+      warehouse-migrate:
+        condition: service_completed_successfully
 
   classification-service:
     <<: *python-service
-    build: ./services/classification-service
+    build:
+      context: ./services/classification-service
+      additional_contexts:
+        ml_common: ./services/ml-common
     command: ["python", "-m", "uvicorn", "floodinsight_classification.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/floodinsight_classification", "--log-config", "/etc/floodinsight/logging.json"]
     volumes:
       - ./services/classification-service/floodinsight_classification:/app/floodinsight_classification:ro
+      - classification-models:/models
     environment:
       FLOODINSIGHT_CLASSIFICATION_ENVIRONMENT: ${FLOODINSIGHT_CLASSIFICATION_ENVIRONMENT:-development}
+      <<: *postgres-environment
+      POSTGRES_HOST: postgres
+    ports:
+      - "127.0.0.1:${CLASSIFICATION_PORT:-8006}:8000"
+    depends_on:
+      warehouse-migrate:
+        condition: service_completed_successfully
 
   api-service:
     <<: *python-service
@@ -94,6 +166,16 @@ services:
       - ./services/api-service/floodinsight_api:/app/floodinsight_api:ro
     environment:
       FLOODINSIGHT_API_ENVIRONMENT: ${FLOODINSIGHT_API_ENVIRONMENT:-development}
+      FLOODINSIGHT_API_CORS_ORIGINS: ${FLOODINSIGHT_API_CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      FLOODINSIGHT_API_READ_TIMEOUT: ${FLOODINSIGHT_API_READ_TIMEOUT:-10}
+      FLOODINSIGHT_API_PROCESSING_TIMEOUT: ${FLOODINSIGHT_API_PROCESSING_TIMEOUT:-180}
+      FLOODINSIGHT_API_PROBE_TIMEOUT: ${FLOODINSIGHT_API_PROBE_TIMEOUT:-4}
+      FLOODINSIGHT_API_INGESTION_URL: ${FLOODINSIGHT_API_INGESTION_URL:-http://ingestion-service:8000}
+      FLOODINSIGHT_API_WAREHOUSE_URL: ${FLOODINSIGHT_API_WAREHOUSE_URL:-http://warehouse-service:8000}
+      FLOODINSIGHT_API_ANALYTICS_URL: ${FLOODINSIGHT_API_ANALYTICS_URL:-http://analysis-service:8000}
+      FLOODINSIGHT_API_CLUSTERING_URL: ${FLOODINSIGHT_API_CLUSTERING_URL:-http://clustering-service:8000}
+      FLOODINSIGHT_API_PREDICTION_URL: ${FLOODINSIGHT_API_PREDICTION_URL:-http://prediction-service:8000}
+      FLOODINSIGHT_API_CLASSIFICATION_URL: ${FLOODINSIGHT_API_CLASSIFICATION_URL:-http://classification-service:8000}
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
 
@@ -123,6 +205,8 @@ services:
     <<: *runtime
     image: postgres:16
     environment: *postgres-environment
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -144,3 +228,6 @@ networks:
 
 volumes:
   postgres-data:
+  classification-models:
+  prediction-models:
+  clustering-models:

@@ -1,0 +1,5 @@
+**
+!floodinsight_ml/
+!floodinsight_ml/**
+**/__pycache__/
+**/*.pyc

@@ -10,3 +10,5 @@ node_modules/
 *.tsbuildinfo
 coverage/
 .DS_Store
+*.egg-info/
+/artifacts/ml-benchmark/
