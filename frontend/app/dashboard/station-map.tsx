@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { GeoJsonObject } from "geojson";
 import { CircleMarker, GeoJSON, MapContainer, Popup, TileLayer, useMap } from "react-leaflet";
@@ -12,6 +13,7 @@ import "leaflet/dist/leaflet.css";
 export type Markers = {
   points: Location[]; selected: string;
   onSelect: (code: string) => void; latest: Record<string, Rain>; weather: Weather[]; compact?: boolean;
+  floodMarkers?: Record<string, { color: string; content: ReactNode }>;
 };
 const center: [number, number] = [16.047, 108.205];
 
@@ -39,7 +41,7 @@ function View({ points, selected, compact }: Pick<Markers, "points" | "selected"
   return null;
 }
 
-export default function StationMap({ points, selected, onSelect, latest, weather, compact }: Markers) {
+export default function StationMap({ points, selected, onSelect, latest, weather, compact, floodMarkers }: Markers) {
   const [tileError, setTileError] = useState(false);
   const coast = useQuery({
     queryKey: ["da-nang-coastline"],
@@ -64,18 +66,20 @@ export default function StationMap({ points, selected, onSelect, latest, weather
       {points.map((point) => {
         const rain = latest[point.code];
         const now = weather.find((entry) => entry.location_code === point.code);
-        const color = rainfallColor(rain);
+        const marker = floodMarkers?.[point.code];
+        const color = marker?.color ?? rainfallColor(rain);
         return <CircleMarker key={point.code} center={[point.latitude, point.longitude]}
           eventHandlers={{ click: () => onSelect(point.code) }}
           radius={selected === point.code ? 11 : 8}
           pathOptions={{ color: "#fff", weight: 2, fillColor: color, fillOpacity: 1 }}>
-          <Popup autoPan={false}>
-            <strong className="popup-name">{point.name}</strong>
+          <Popup autoPan={false} maxHeight={marker ? 250 : undefined}>
+            {marker ? marker.content : <><strong className="popup-name">{point.name}</strong>
             <div>Daily rainfall: {displayNumber(rain?.rainfall_total_mm)} mm</div>
             {rain && <div>{rain.period_start} · {rain.rainfall_hours}/{rain.expected_hours} h covered</div>}
             <div>Modeled temperature: {displayNumber(now?.payload.values.temperature_2m)} °C</div>
             <div>Modeled humidity: {displayNumber(now?.payload.values.relative_humidity_2m)}%</div>
             {now && <small>{localTime(now.valid_at)} ICT</small>}
+            </>}
           </Popup>
         </CircleMarker>;
       })}

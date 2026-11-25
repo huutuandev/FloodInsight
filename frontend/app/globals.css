@@ -192,6 +192,38 @@ caption { text-align: left; color: var(--muted); margin-bottom: 5px; text-transf
 .probability progress { width: 100%; accent-color: #34bbab; }
 .main-footer { display: flex; justify-content: space-between; gap: 6px; padding: 4px; color: var(--faint); font-size: 10px; }
 
+.research-note { color: var(--muted); font-size: .875rem; margin: 0; }
+.flood-overview { grid-template-columns: 1.35fr 1fr 1fr; align-items: stretch; gap: .9rem; }
+.risk-lead { border-color: var(--accent); }
+.risk-value { display: block; font-size: clamp(1.5rem, 4vw, 2.35rem); line-height: 1.2; margin: .25rem 0 .55rem; }
+.risk-value small, .risk-counts small { font-size: .8rem; color: var(--muted); }
+.flood-overview p, .flood-disclosure p { color: var(--muted); font-size: .875rem; }
+.risk-badge { display: inline-flex; align-items: center; gap: .45rem; font-size: .875rem; white-space: nowrap; }
+.risk-badge i { width: .55rem; height: .55rem; border-radius: 50%; flex: 0 0 auto; }
+.risk-counts { display: grid; gap: .25rem; margin: .35rem 0 .75rem; }
+.risk-counts > div { display: flex; justify-content: space-between; align-items: baseline; gap: .65rem; padding: .5rem 0; border-bottom: 1px solid var(--stroke); font-size: .875rem; }
+.risk-counts > div > :first-child { min-width: 0; overflow-wrap: anywhere; }
+.flood-notice { background: var(--soft); border-left: 3px solid var(--warning); padding: .65rem .85rem; font-size: .875rem; overflow-wrap: anywhere; }
+.flood-context { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; margin: .35rem 0 .85rem; }
+.flood-context > div { display: grid; gap: .35rem; padding: .65rem; background: var(--soft); border-radius: .5rem; }
+.flood-context > div span { color: var(--muted); font-size: .875rem; }
+.flood-context > div strong { font-size: 1.05rem; }
+.flood-facts { display: flex; flex-wrap: wrap; gap: .55rem 1rem; margin: .65rem 0; }
+.flood-facts div { display: grid; gap: .2rem; font-size: .875rem; }
+.flood-facts dt, .flood-disclosure { color: var(--muted); }
+.flood-facts dd { margin: 0; }
+.flood-table { font-size: .875rem; }
+.flood-table tbody tr[data-selected=true] { background-color: var(--soft); }
+.flood-table .factor-inputs { white-space: normal; overflow-wrap: anywhere; }
+.sort-button { display: inline-flex; align-items: center; gap: .4rem; font-weight: inherit; }
+.flood-disclosure { font-size: .875rem; margin: .65rem 0; }
+.flood-disclosure summary { cursor: pointer; }
+.flood-disclosure p { overflow-wrap: anywhere; }
+.flood-disclosure a, .risk-counts a { text-decoration: underline; color: var(--accent); }
+.flood-stations { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .75rem; }
+.flood-stations button[aria-pressed=true] { border-color: var(--accent); }
+.flood-legend { margin-top: .7rem; }
+
 @media (max-width: 1160px) {
   .dashboard { grid-template-columns: 189px minmax(0,1fr); }
   .sidebar { padding-inline: 13px; }
@@ -206,7 +238,7 @@ caption { text-align: left; color: var(--muted); margin-bottom: 5px; text-transf
   .dashboard-main { order: 2; width: 100%; }
   .sidebar { order: 1; position: static; height: auto; padding: 8px 10px; border-right: 0; border-bottom: 1px solid var(--stroke); }
   .sidebar > .brand { display: none; }
-  .sidebar nav { grid-template-columns: repeat(5,minmax(0,1fr)); margin: 0; }
+  .sidebar nav { grid-template-columns: repeat(6,minmax(0,1fr)); margin: 0; }
   .sidebar nav button { flex-direction: column; gap: 3px; min-height: 43px; padding: 4px 2px; font-size: 10px; }
   .sidebar .desktop-label { display: none; }
   .sidebar .mobile-label { display: inline; }
@@ -216,7 +248,8 @@ caption { text-align: left; color: var(--muted); margin-bottom: 5px; text-transf
   .topbar { order: 0; height: 58px; }
 }
 @media (max-width: 730px) {
-  .overview-grid, .two-col, .pattern-grid, .map-layout { grid-template-columns: minmax(0,1fr); }
+  .overview-grid, .two-col, .pattern-grid, .map-layout, .flood-overview { grid-template-columns: minmax(0,1fr); }
+  .flood-context { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .full-map { height: 345px; }
   .metrics-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }

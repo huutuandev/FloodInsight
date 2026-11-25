@@ -1,7 +1,8 @@
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Query, Request
-from pydantic import Field, JsonValue, TypeAdapter, ValidationError
+from pydantic import AwareDatetime, BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 
 from ..schemas.gateway import (
     AnalysisQuery, AnalysisScope, BatchRequest, ClassTrain, ClusterRun, ClusterTrain,
@@ -9,6 +10,7 @@ from ..schemas.gateway import (
     ModelPage, NextDay, ObservationRow, Page, Period, RainfallRow, Success, Version, WeatherQuery,
 )
 from ..services.upstream import UpstreamError
+from ..schemas import flood
 
 router = APIRouter(prefix="/api/v1", responses={
     400: {"model": Failure}, 404: {"model": Failure}, 409: {"model": Failure}, 422: {"model": Failure},
@@ -127,6 +129,112 @@ def bind_ml(group, service, upstream_group, kind, train_schema, inference_schema
 bind_ml("clustering", "clustering", "clustering", "ml_clustering", ClusterTrain, ClusterRun, "run")
 bind_ml("predictions", "prediction", "prediction", "ml_rainfall_prediction", ForecastTrain, NextDay, "predict")
 bind_ml("classifications", "classification", "classification", "ml_rainfall_classification", ClassTrain, NextDay, "predict")
+
+
+class FloodRiskRequest(BaseModel):
+    location: str = Field(min_length=1, max_length=100)
+    issued_at: AwareDatetime | None = None
+
+
+@router.get("/flood-predictions/readiness", response_model=Success[flood.Readiness])
+@router.get("/flood-prediction/readiness", response_model=Success[dict])
+async def flood_readiness(request: Request):
+    data = await forward(request, "prediction", "/flood-prediction/readiness")
+    return envelope(request, data, "supervised_flood_prediction")
+
+
+@router.post("/flood-predictions/predict", response_model=Success[flood.Prediction])
+@router.post("/flood-prediction/predict", response_model=Success[dict])
+async def flood_prediction(request: Request, payload: flood.FloodPredictionRequest):
+    data = await forward(request, "prediction", "/flood-prediction/predict", body=payload, method="POST")
+    return envelope(request, data, "supervised_flood_prediction")
+
+
+@router.post("/flood-predictions/train", response_model=Success[flood.TrainingResult])
+async def train_flood_prediction(request: Request, payload: flood.FloodTrainingRequest):
+    data = await forward(request, "prediction", "/flood-prediction/train", body=payload, method="POST")
+    return envelope(request, data, "supervised_flood_training")
+
+
+@router.get("/flood-predictions/results", response_model=Success[list[flood.Prediction]])
+async def flood_prediction_results(request: Request, location: str | None = None, current: bool = False,
+                                   limit: Annotated[int, Query(ge=1, le=250)] = 100):
+    query = {"current": current, "limit": limit}
+    if location is not None:
+        query["location"] = location
+    data = await forward(request, "prediction", "/flood-prediction/results", query=query)
+    return envelope(request, items(data, "prediction"), "supervised_flood_prediction")
+
+
+@router.get("/flood-predictions/metrics", response_model=Success[flood.Metrics])
+async def flood_prediction_metrics(request: Request):
+    return envelope(request, await forward(request, "prediction", "/flood-prediction/metrics"), "flood_model_metrics")
+
+
+@router.get("/flood-risk/latest", response_model=Success[list[flood.PointAssessment]])
+async def latest_flood_risk(request: Request):
+    data = await forward(request, "prediction", "/flood-risk/latest")
+    return envelope(request, items(data, "prediction"), "experimental_flood_risk")
+
+
+@router.get("/flood-risk/locations", response_model=Success[list[LocationRow]])
+async def flood_locations(request: Request):
+    data = await forward(request, "prediction", "/flood-risk/locations")
+    return envelope(request, items(data, "prediction"), "flood_monitoring_points")
+
+
+@router.get("/flood-risk/history", response_model=Success[list[flood.Assessment]])
+async def flood_history(request: Request, location: str | None = None,
+                        limit: Annotated[int, Query(ge=1, le=100)] = 20):
+    query = {"limit": limit}
+    if location is not None:
+        query["location"] = location
+    data = await forward(request, "prediction", "/flood-risk/history", query=query)
+    return envelope(request, items(data, "prediction"), "experimental_flood_risk")
+
+
+@router.get("/flood-risk/{location}/details", response_model=Success[flood.PointAssessment])
+async def flood_details(request: Request, location: str):
+    data = await forward(request, "prediction", f"/flood-risk/{quote(location, safe='')}/details")
+    return envelope(request, data, "experimental_flood_risk")
+
+
+@router.post("/flood-risk/generate", response_model=Success[list[flood.Assessment]])
+async def generate_flood_risk(request: Request, payload: flood.RiskGeneration):
+    data = await forward(request, "prediction", "/flood-risk/generate", body=payload, method="POST")
+    return envelope(request, items(data, "prediction"), "experimental_flood_risk")
+
+
+@router.get("/flood-data/coverage", response_model=Success[flood.Coverage])
+async def flood_coverage(request: Request):
+    data = await forward(request, "warehouse", "/warehouse/flood-data/coverage")
+    return envelope(request, data, "flood_data_coverage")
+
+
+@router.post("/flood-risk/assessments", response_model=Success[dict])
+async def create_flood_assessment(request: Request, payload: FloodRiskRequest):
+    data = await forward(request, "prediction", "/flood-risk/assessments", body=payload, method="POST")
+    return envelope(request, data, "experimental_flood_risk")
+
+
+@router.get("/flood-risk/assessments", response_model=Success[list[dict]])
+async def flood_assessments(request: Request, location: str | None = None,
+                            limit: Annotated[int, Query(ge=1, le=100)] = 20):
+    query = {"limit": limit}
+    if location is not None:
+        query["location"] = location
+    data = await forward(request, "prediction", "/flood-risk/assessments", query=query)
+    return envelope(request, items(data, "prediction"), "experimental_flood_risk")
+
+
+@router.get("/clustering/flood-profiles", response_model=Success[dict])
+async def flood_profiles(request: Request, issued_at: AwareDatetime | None = None,
+                         clusters: Annotated[int, Query(ge=2, le=5)] = 2):
+    query = {"clusters": clusters}
+    if issued_at is not None:
+        query["issued_at"] = issued_at.isoformat()
+    data = await forward(request, "clustering", "/clustering/flood-profiles", query=query)
+    return envelope(request, data, "exploratory_flood_profiles")
 
 
 @router.get("/weather/latest", tags=["weather"], response_model=Success[list[dict]])

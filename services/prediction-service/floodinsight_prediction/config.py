@@ -6,3 +6,4 @@ class Settings(BaseSettings):
 
     environment: str = "development"
     artifact_dir: str = "/models"
+    flood_risk_config: str | None = None

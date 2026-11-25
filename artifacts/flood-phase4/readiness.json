@@ -1,0 +1,19 @@
+{
+  "status": "insufficient_training_data",
+  "blocking_inventory": [
+    "candidate_positive_observations",
+    "candidate_dry_observations",
+    "forecast_snapshots",
+    "independent_event_support_below_minimum"
+  ],
+  "inventory": {
+    "documented_events": 1,
+    "candidate_positive_observations": 0,
+    "candidate_linked_event_keys": 0,
+    "candidate_dry_observations": 0,
+    "forecast_snapshots": 0,
+    "monitoring_points": 5,
+    "flood_registry_rows": 0,
+    "flood_probability_rows": 0
+  }
+}

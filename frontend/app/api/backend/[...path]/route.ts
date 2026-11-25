@@ -5,15 +5,17 @@ const reads = new Set([
   "analytics", "clustering/results", "clustering/metrics", "predictions/results",
   "predictions/metrics", "classifications/results", "classifications/metrics",
   "weather/ingestion/history", "weather/etl/status", "weather/quality", "system/status",
+  "flood-risk/latest", "flood-risk/locations", "flood-risk/history", "flood-data/coverage",
+  "flood-predictions/results", "flood-predictions/metrics", "flood-predictions/readiness", "clustering/flood-profiles",
 ]);
-const writes = new Set(["analytics/generate", "weather/ingestion/run"]);
+const writes = new Set(["analytics/generate", "weather/ingestion/run", "flood-risk/generate", "flood-predictions/predict"]);
 
 type Context = { params: Promise<{ path: string[] }> };
 
 async function proxy(request: NextRequest, context: Context) {
   const path = (await context.params).path.join("/");
   const post = request.method === "POST";
-  if (!(post ? writes : reads).has(path)) {
+  if (!(post ? writes : reads).has(path) && (post || !/^flood-risk\/[a-z0-9][a-z0-9_-]{0,99}\/details$/i.test(path))) {
     return Response.json({ error: { message: "Dashboard resource not found" } }, { status: 404 });
   }
 

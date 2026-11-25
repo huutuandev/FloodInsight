@@ -4,6 +4,7 @@ from .config import Settings
 from .routes.health import router
 from .routes.read import router as read_router
 from .routes.historical import router as historical_router
+from .routes.flood_coverage import router as flood_coverage_router
 
 
 def create_app() -> FastAPI:
@@ -12,6 +13,7 @@ def create_app() -> FastAPI:
     app.include_router(router)
     app.include_router(read_router)
     app.include_router(historical_router)
+    app.include_router(flood_coverage_router)
     return app
 
 

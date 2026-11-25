@@ -49,5 +49,7 @@ def test_classifier_reports_support_probabilities_and_regenerates():
             conn.execute("DELETE FROM classification_results WHERE model_version_id = %s", (model["id"],))
         assert client.get("/classification/results", params={"version": version}).json() == []
         restored = client.post("/classification/predict", json=request | {"issued_at": predicted["issued_at"]})
-        assert restored.json() == predicted
+        restored_result = restored.json()
+        assert restored_result.pop("probabilities") == pytest.approx(probs)
+        assert restored_result == {key: value for key, value in predicted.items() if key != "probabilities"}
 

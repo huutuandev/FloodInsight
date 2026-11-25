@@ -6,7 +6,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "FloodInsight Da Nang",
-  description: "Environmental monitoring, rainfall analytics, and modeled weather for Da Nang",
+  description: "Experimental flood risk monitoring, forecast evidence, and rainfall analytics for Da Nang",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -263,7 +263,7 @@ class ModelVersion(Base):
         UniqueConstraint("kind", "model_name", "version"),
         UniqueConstraint("id", "kind"),
         CheckConstraint("jsonb_typeof(training_metadata) = 'object'", name="training_metadata_object"),
-        CheckConstraint("kind IN ('clustering', 'prediction', 'classification')", name="kind"),
+        CheckConstraint("kind IN ('clustering', 'prediction', 'classification', 'flood')", name="kind"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)

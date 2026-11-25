@@ -11,7 +11,9 @@ class Settings(BaseSettings):
     interval_seconds: int = Field(default=300, ge=1)
     timeout_seconds: float = Field(default=12, gt=0, le=60)
     max_attempts: int = Field(default=3, ge=1, le=5)
-    forecast_hours: int = Field(default=24, ge=1, le=48)
+    # Include both the provider's current hour and the endpoint of the next
+    # 24-hour decision window after the current receipt becomes eligible.
+    forecast_hours: int = Field(default=26, ge=1, le=48)
 
 
 class DatabaseSettings(BaseSettings):

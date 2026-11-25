@@ -5,12 +5,12 @@ import numpy as np
 import pandas as pd
 from pydantic import AwareDatetime, BaseModel
 
+from .availability import ERA5_DELAY as DELAY, archive_available_at
 from .schemas import Location, Version, Window
 from .storage import DataUnavailable, SOURCE, connect
 
 DAY = timedelta(days=1)
 LAGS = range(8, 15)
-DELAY = timedelta(days=6)
 FEATURES = [
     "rain_d8", "rain_d9", "rain_d10", "rain_mean_d8_d14",
     "temperature_d8", "humidity_d8", "wind_d8", "season_sin", "season_cos",
@@ -58,10 +58,7 @@ def daily_rows(start, end, location):
 
 
 def available_at(row, mode):
-    if mode == "retrospective":
-        return row["day_end"] + DELAY
-    receipt = row["received_at"]
-    return max(row["day_end"], receipt) if receipt is not None else None
+    return archive_available_at(row["day_end"], row["received_at"], mode)
 
 
 def lag_features(days, target, issued_at, mode):

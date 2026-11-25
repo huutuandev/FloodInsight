@@ -31,13 +31,18 @@ const chartTitles = {
 export function RainfallPanel({ scope, theme, compact = false }: { scope: Scope; theme: Theme; compact?: boolean }) {
   const [period, setPeriod] = useState<Period>("daily");
   const query = useCollection<Rain>("rainfall/" + period, { ...scope, source }, Boolean(scope.location));
+  const coverage = useData<RainfallCoverage[]>("rainfall/coverage", { source });
+  const hasArchive = coverage.data?.some((row) => row.location === scope.location);
   return <Panel title={compact ? "Rainfall history" : "Rainfall over time"}
     subtitle="Historical ERA5 reanalysis · ICT" action={<div className="segmented" aria-label="Rainfall frequency">
       {periods.map((item) => <button key={item} type="button" aria-pressed={item === period}
         onClick={() => setPeriod(item)}>{item}</button>)}
     </div>}>
     {!scope.location ? <Empty title="Select a sampling point" detail="Rainfall history loads when a location is available." />
-      : <Resource query={query}>{(rows) => rows.some((r) => r.rainfall_total_mm !== null) ?
+      : <Resource query={query} empty={hasArchive === false
+        ? <Empty title="No historical rainfall collected" detail="The ERA5 archive has no curated data for this sampling point." />
+        : <Empty title="No rainfall for selected dates" detail="Choose dates with warehouse coverage." />}>
+        {(rows) => rows.some((r) => r.rainfall_total_mm !== null) ?
         <><Chart theme={theme} label={period + " rainfall"} option={rainfallOption(rows, scope, period)} compact={compact} />
           {rows.some((row) => row.rainfall_hours < row.expected_hours) &&
             <p className="chart-note">Some periods have partial rainfall coverage.</p>}</>

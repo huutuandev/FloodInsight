@@ -95,6 +95,17 @@ class IngestionRepository:
                     ],
                 )
                 inserted = cursor.rowcount
+                await cursor.executemany(
+                    """
+                    INSERT INTO forecast_snapshot_receipts (snapshot_id, run_id, received_at)
+                    SELECT id, %s, %s FROM raw_weather_forecasts
+                    WHERE source_id = %s AND source_location_key = %s AND valid_at = %s
+                      AND snapshot_hash = %s AND snapshot_hash IS NOT NULL
+                    ON CONFLICT (snapshot_id, run_id) DO NOTHING
+                    """,
+                    [(run_id, row.received_at, source_id, row.location_code, row.valid_at, row.digest)
+                     for row in snapshots if row.payload["kind"] == "hourly"],
+                )
             return await self.finish(conn, run_id, "succeeded", inserted)
 
     async def finish(

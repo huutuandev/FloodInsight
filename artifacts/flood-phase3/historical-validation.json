@@ -1,0 +1,62 @@
+{
+  "backtest": {
+    "confusion_scored_only": null,
+    "detected_event_keys": null,
+    "label_as_of": "2026-11-25T14:00:00+00:00",
+    "label_counts": {
+      "negative": 0,
+      "positive": 0,
+      "unknown": 240
+    },
+    "labeled_abstained": 0,
+    "labeled_scored": 0,
+    "precision_scored_only": null,
+    "risk_categories": {
+      "Insufficient Data": 240
+    },
+    "rows": 240,
+    "rows_sha256": "25dbcb566c701c7e72018db373f5a55d0dddbf3a3561dd4a94a98635e612818c",
+    "scoreable_positive_event_keys": 0,
+    "sensitivity_scored_only": null,
+    "settings": {
+      "assumed_era5_delay_hours": 144,
+      "end": "2022-10-15T16:00:00+00:00",
+      "point_radius_m": 50,
+      "start": "2022-10-13T17:00:00+00:00",
+      "target_hours": 24,
+      "wet_hour_mm": 0.1
+    },
+    "specificity_scored_only": null,
+    "validation_status": "not_evaluable"
+  },
+  "illustrative_sensitivity": {
+    "large_rain": {
+      "baseline": 93.208333,
+      "categories": [
+        "Very High"
+      ],
+      "max": 95.208333,
+      "min": 88.208333,
+      "trials": 22
+    },
+    "lower_rain": {
+      "baseline": 18.041667,
+      "categories": [
+        "Low"
+      ],
+      "max": 19.041667,
+      "min": 16.916667,
+      "trials": 22
+    },
+    "near_boundary": {
+      "baseline": 49.175,
+      "categories": [
+        "Moderate",
+        "High"
+      ],
+      "max": 53.675,
+      "min": 46.175,
+      "trials": 22
+    }
+  }
+}

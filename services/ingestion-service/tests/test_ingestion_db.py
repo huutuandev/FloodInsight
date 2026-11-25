@@ -57,6 +57,15 @@ def test_routes_persist_deduplicate_and_recover(isolated_source, recorded_snapsh
         assert first.json()["records_inserted"] == 3
         replay = client.post("/ingestion/run").json()
         assert replay["records_inserted"] == 0
+        with psycopg.connect(
+            host=isolated_source.host, port=isolated_source.port, dbname=isolated_source.db,
+            user=isolated_source.user, password=isolated_source.password.get_secret_value(),
+        ) as conn:
+            receipts = conn.execute("""
+                SELECT run_id, count(*) FROM forecast_snapshot_receipts
+                WHERE run_id IN (%s, %s) GROUP BY run_id ORDER BY run_id
+            """, (first.json()["id"], replay["id"])).fetchall()
+        assert receipts == [(first.json()["id"], 2), (replay["id"], 2)]
         history = client.get("/ingestion/history", params={"limit": 2, "offset": 1}).json()
         assert [row["status"] for row in history] == ["succeeded", "failed"]
         assert history[-1]["error_message"] == "test outage"

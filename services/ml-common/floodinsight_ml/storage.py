@@ -83,14 +83,15 @@ class Models:
             raise ModelUnavailable("Registered model artifact is missing, changed, or incompatible")
         return path
 
-    def lookup(self, version):
+    def lookup(self, version, *, required_metadata=None):
         with connect() as conn:
             models = conn.execute("""
                 SELECT id, kind, model_name, version, artifact_uri, created_at, training_metadata
                 FROM model_versions
                 WHERE kind = %s AND model_name = %s AND (%s::text IS NULL OR version = %s)
+                  AND training_metadata @> %s
                 ORDER BY id DESC
-            """, (self.kind, self.name, version, version)).fetchall()
+            """, (self.kind, self.name, version, version, Jsonb(required_metadata or {}))).fetchall()
         if not models:
             raise ModelUnavailable("Train or select an existing model version")
         for model in models:
@@ -103,6 +104,6 @@ class Models:
                 return model
         raise ModelUnavailable("No registered model has a usable artifact")
 
-    def load(self, version):
-        model = self.lookup(version)
+    def load(self, version, *, required_metadata=None):
+        model = self.lookup(version, required_metadata=required_metadata)
         return model, joblib.load(self.artifact_path(model))

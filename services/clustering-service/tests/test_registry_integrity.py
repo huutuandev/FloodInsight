@@ -19,7 +19,7 @@ def test_registry_skips_broken_latest_but_rejects_explicit_broken_version(tmp_pa
 
     class Connection:
         def execute(self, _sql, params):
-            self.version = params[-1]
+            _, _, self.version, _, _ = params
             return self
 
         def fetchall(self):
