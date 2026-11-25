@@ -263,6 +263,35 @@ export function MapSection({ scope, theme, points, weather, onSelect }: AreaProp
         </div>}
       </Panel>
     </div>
+    {archive.data?.length ? <FloodSurveyTable reports={archive.data} /> : null}
     <RainfallPanel scope={mapScope} theme={theme} compact />
   </>;
+}
+
+function FloodSurveyTable({ reports }: { reports: FloodReport[] }) {
+  const events = new Map(reports.map(row => [row.event_id, row]));
+  const sites = new Map<string, { name: string; events: Map<string, FloodReport[]> }>();
+  for (const row of reports) {
+    if (!row.site_code || !row.site_name) continue;
+    const site = sites.get(row.site_code) ?? { name: row.site_name, events: new Map<string, FloodReport[]>() };
+    site.events.set(row.event_id, [...site.events.get(row.event_id) ?? [], row]);
+    sites.set(row.site_code, site);
+  }
+  if (!sites.size) return null;
+  return <Panel title="Theo dõi địa điểm qua các đợt ngập"
+    subtitle="Các đợt có tư liệu tại khu vực đang chọn. Ô trống dữ liệu nghĩa là chưa có ghi nhận cho địa điểm trong đợt đó.">
+    <div className="table-wrap"><table>
+      <thead><tr><th scope="col">Địa điểm cố định</th>
+        {[...events.values()].map(event => <th scope="col" key={event.event_id} title={event.title}>{event.event_date}</th>)}
+      </tr></thead>
+      <tbody>{[...sites.entries()].map(([code, site]) => <tr key={code}>
+        <th scope="row">{site.name}</th>
+        {[...events.keys()].map(id => <td key={id}>{site.events.get(id)?.map(row =>
+          <div key={row.id}>{row.status === "flooded" ? "Ngập" : row.status === "confirmed_dry" ? "Đã xác nhận không ngập" : "Chưa rõ"}
+            {row.depth_cm != null && ` · ${row.depth_cm} cm`}
+            {row.sources.map(s => <small key={s.url}> · <a href={s.url} target="_blank" rel="noreferrer">{s.publisher}</a></small>)}
+          </div>) ?? "Chưa có ghi nhận"}</td>)}
+      </tr>)}</tbody>
+    </table></div>
+  </Panel>;
 }

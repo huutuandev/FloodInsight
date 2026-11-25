@@ -16,6 +16,7 @@ export type Markers = {
   onSelect: (code: string) => void; latest: Record<string, Rain>; weather: Weather[]; compact?: boolean;
 };
 export type FloodReport = {
+  site_code: string | null; site_name: string | null;
   river_context: {station_or_site: string; time_description: string; level_m: number; reference_level: string; source_url: string}[] | null;
   road_geometry: import("geojson").LineString | null;
   context_note: string | null; elevation_m: number | null; elevation_source: string | null;

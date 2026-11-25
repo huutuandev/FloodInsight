@@ -16,6 +16,8 @@ Mở [dashboard](http://localhost:3000), [trạng thái API](http://localhost:80
 
 Khi khởi động lần đầu, `warehouse-migrate` tạo hoặc nâng cấp lược đồ rồi kết thúc. Để có kết quả dự báo trên một kho mới, cần nhập lịch sử ERA5, chạy ETL và huấn luyện mô hình cho điểm cần xem. Hãy kiểm tra phạm vi ngày có dữ liệu trước khi chọn khoảng huấn luyện. Mô hình bảy ngày dùng endpoint riêng `POST /prediction/outlook/train` trên cổng 8005. [Nhập lịch sử và chạy ETL](docs/historical-etl.md) · [Huấn luyện và quản lý mô hình](docs/machine-learning.md)
 
+Trong **Bản đồ Đà Nẵng**, bảng **Theo dõi địa điểm qua các đợt ngập** so sánh các đợt có tư liệu cho khu vực đang chọn. Mỗi hàng dùng mã cố định từ `flood_monitoring_sites`. Khi nhập báo cáo mới cho cùng một địa điểm, dùng lại mã ở `flood_reports.site_code` để nối lịch sử dù cách viết tên đường thay đổi. Giao lộ và cả đoạn đường là hai phạm vi khảo sát riêng. Bảng giữ nguồn, số đo độ sâu và từng ghi nhận của mỗi đợt.
+
 ## Sử dụng dashboard
 
 | Mục | Có thể làm gì |

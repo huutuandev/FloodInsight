@@ -12,7 +12,7 @@ from floodinsight_ml.storage import connect
 def evidence():
     with connect() as conn:
         return conn.execute("""
-            SELECT e.id AS event, e.event_date, r.place, coalesce(r.site_location,e.location) AS district,
+            SELECT e.id AS event, e.event_date, r.site_code, r.place, coalesce(r.site_location,e.location) AS district,
                    r.status, r.depth_cm, r.elevation_m, forecast.rainfall_mm
             FROM flood_reports r JOIN flood_events e ON e.id=r.event_id
             LEFT JOIN LATERAL (
@@ -60,7 +60,9 @@ def cluster_sites(rows):
     # Compare sites only across the same surveyed events; absent reports remain missing.
     profiles = {}
     for r in rows:
-        site = (r["district"], r["place"])
+        if not r["site_code"]:
+            continue
+        site = (r["district"], r["site_code"])
         profiles.setdefault(site, {}).setdefault(r["event"], set()).add(r["status"])
     groups = {}
     for site, events in profiles.items():
@@ -73,7 +75,7 @@ def cluster_sites(rows):
             continue
         labels = KMeans(n_clusters=2, random_state=0, n_init=10).fit_predict(matrix)
         output.append({"events": events, "sites": [
-            {"district": s[0], "place": s[1], "cluster": int(label)}
+            {"district": s[0], "site_code": s[1], "cluster": int(label)}
             for s, label in zip(sites, labels)]})
     return output
 

@@ -5,7 +5,7 @@ from ..config import DatabaseSettings
 QUERIES = {
     "flood_reports": """
         SELECT e.id AS event_id, e.event_date, e.title, coalesce(r.site_location,e.location) AS location,
-               r.road_geometry, r.context_note, r.elevation_m, r.elevation_source,
+               r.site_code, site.name AS site_name, r.road_geometry, r.context_note, r.elevation_m, r.elevation_source,
                (SELECT jsonb_agg(to_jsonb(h) ORDER BY h.station_or_site) FROM river_observations h
                 WHERE h.observed_date=e.event_date AND coalesce(r.site_location,e.location)='hai-chau') AS river_context,
                r.id, r.place, r.precision_level, r.status, r.depth_cm,
@@ -14,6 +14,7 @@ QUERIES = {
                                  ORDER BY s.url) FROM flood_report_sources s
                 WHERE s.report_id = r.id) AS sources
         FROM flood_events e JOIN flood_reports r ON r.event_id = e.id
+        LEFT JOIN flood_monitoring_sites site ON site.code=r.site_code
         WHERE (CAST(:location AS text) IS NULL OR coalesce(r.site_location,e.location) = :location)
         ORDER BY e.event_date DESC, e.id, r.id
     """,
