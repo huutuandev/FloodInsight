@@ -54,6 +54,11 @@ async def locations(request: Request, query: Annotated[Locations, Query()]):
     return await warehouse_page(request, "/warehouse/locations", query, LocationRow, "locations")
 
 
+@router.get("/flood-reports", tags=["flood history"], response_model=Success[list[dict]])
+async def flood_reports(request: Request, query: Annotated[Locations, Query()]):
+    return await warehouse_page(request, "/warehouse/flood-reports", query, dict, "flood_reports")
+
+
 @router.get("/weather", tags=["weather"], response_model=Success[list[ObservationRow]])
 @router.get("/weather/observations", tags=["weather"], response_model=Success[list[ObservationRow]])
 async def observations(request: Request, query: Annotated[WeatherQuery, Query()]):
@@ -137,6 +142,12 @@ async def prediction_outlook(request: Request, location: str = Query(min_length=
 
 class OutlookPublication(BaseModel):
     location: str = Field(min_length=1, max_length=100)
+
+
+@router.get("/predictions/outlook/verification", tags=["predictions"], response_model=Success[JsonValue])
+async def prediction_verification(request: Request, location: str = Query(min_length=1, max_length=100)):
+    data = await forward(request, "prediction", "/prediction/outlook/verification", query={"location": location})
+    return envelope(request, data, "ml_outlook_verification")
 
 
 @router.post("/predictions/outlook/publish", tags=["predictions"], response_model=Success[JsonValue])

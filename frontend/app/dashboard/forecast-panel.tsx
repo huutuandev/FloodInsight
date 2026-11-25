@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ApiError, displayNumber, localTime, request, useCollection, useData, type Classification, type DateRange, type Prediction } from "./data";
+import { displayNumber, localTime, request, useCollection, useData, type Classification, type DateRange, type Prediction } from "./data";
 import { shiftDay } from "./provider-rainfall";
 import { Empty, Loading, Panel, QueryError } from "./ui";
 
@@ -92,14 +92,15 @@ export function ForecastPanel({ location, range }: { location: string; range?: D
       <QueryError error={publish.error} retry={() => publish.mutate(location)} />}
     {!location ? <Empty title="Chọn điểm lấy mẫu để xem dự báo" /> : <>
       {issues.map((item, index) => item.error
-        && (!(item.error instanceof ApiError) || item.error.status !== 404)
         && <QueryError key={index} error={item.error} retry={() => void item.refetch()} />)}
       {data && <p className="chart-note">
           Đầu vào ERA5: {data.input_start} đến {data.input_end} · {localTime(data.issued_at)} ICT.
           {" "}Bản 7 ngày hiện tại: {data.published ? "đã phát hành." : "xem trước."}
       </p>}
       {!dates.length ? pending ? <Loading /> : <Empty title="Chưa có dự báo trong khoảng ngày đã chọn" /> :
-        <div className="table-wrap"><table>
+        <><p className="forecast-coverage" role="status">{pending ? "Đang cập nhật dự báo…" :
+          `Có dự báo lượng mưa cho ${rain.size}/${range ? selectedDays : 7} ngày`}</p>
+        <div className="table-wrap"><table className="daily-forecast-table">
           <thead><tr>
             <th scope="col">Ngày (ICT)</th><th scope="col" aria-label="Predicted mm">Lượng mưa dự đoán</th>
             <th scope="col">Phân loại cường độ</th><th scope="col">Phát hành (ICT)</th>
@@ -110,23 +111,24 @@ export function ForecastPanel({ location, range }: { location: string; range?: D
             const label = classes.get(date);
             return <tr key={date}>
               <th scope="row">{date}</th>
-              <td>{row ? `${displayNumber(row.rainfall_mm)} mm` : pending ? "Đang tải…" : "Chưa có dự báo"}</td>
-              <td>{label ? <details>
+              <td data-label="Lượng mưa">{row ? <strong>{displayNumber(row.rainfall_mm)} mm</strong> : pending ? "Đang tải…" : "Chưa có dự báo"}</td>
+              <td data-label="Cường độ">{row && <div>{intensity(row.rainfall_mm)} <small>· Theo lượng mưa dự đoán</small></div>}
+                {label ? <details>
                 <summary>{labels[label.label] ?? label.label} <small>· Bộ phân loại ngày kế tiếp</small></summary>
                 <small>Tính lúc {localTime(label.issued_at)} ICT.</small>
                 {Object.entries(label.probabilities ?? {}).map(([key, value]) => <div key={key}>
                   {labels[key] ?? key}: {displayNumber(value * 100)} điểm trên 100
                 </div>)}
               </details>
-                : row ? <>{intensity(row.rainfall_mm)} <small>· Theo ngưỡng mm</small></>
+                : row ? null
                 : pending ? "Đang tải…" : "Chưa có phân loại"}</td>
-              <td>{row ? <>{localTime(row.issued_at)}{row.preview && <small> · Xem trước</small>}</>
+              <td data-label="Phát hành (ICT)">{row ? <>{localTime(row.issued_at)}{row.preview && <small> · Xem trước</small>}</>
                 : label ? localTime(label.issued_at) : "—"}</td>
-              <td>{row?.test_mae_mm != null ? `${displayNumber(row.test_mae_mm, 2)} mm` : "—"}</td>
-              <td>{row?.baseline_mae_mm != null ? `${displayNumber(row.baseline_mae_mm, 2)} mm` : "—"}</td>
+              <td data-label="MAE mô hình">{row?.test_mae_mm != null ? `${displayNumber(row.test_mae_mm, 2)} mm` : "—"}</td>
+              <td data-label="MAE đối chứng">{row?.baseline_mae_mm != null ? `${displayNumber(row.baseline_mae_mm, 2)} mm` : "—"}</td>
             </tr>;
           })}</tbody>
-        </table></div>}
+        </table></div></>}
         <p className="chart-note">
           Phân loại theo lượng mưa dự báo dùng các ngưỡng 0,1 / 10 / 25 mm mỗi ngày.
           MAE đo sai số trung bình trên tập kiểm tra ERA5. Đối chứng dùng lượng mưa của ngày đầu vào gần nhất.

@@ -98,7 +98,7 @@ export function MachineLearning({ scope, filterForecasts, locations, theme }: { 
   return <>
     <ForecastPanel location={scope.location}
       range={filterForecasts ? { start_date: scope.start_date, end_date: scope.end_date } : undefined} />
-    <OutlookHistory location={scope.location} />
+    <OutlookHistory location={scope.location} range={filterForecasts ? scope : undefined} />
     <Panel
       title="Phân cụm hình thế thời tiết (K-Means Clustering)"
       headingLabel="Weather clusters"

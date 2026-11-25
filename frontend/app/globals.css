@@ -1508,3 +1508,45 @@ caption {
     transition-duration: 0.01ms !important;
   }
 }
+
+.forecast-coverage {
+  margin: 0.75rem 0;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .table-wrap .daily-forecast-table {
+    display: block;
+    min-width: 0;
+    width: 100%;
+    white-space: normal;
+  }
+  .daily-forecast-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .daily-forecast-table tbody { display: grid; gap: 0.75rem; }
+  .daily-forecast-table tbody tr {
+    display: grid;
+    border: 1px solid var(--accent-border);
+    border-radius: 0.6rem;
+    overflow: hidden;
+  }
+  .daily-forecast-table tbody th {
+    padding: 0.6rem 0.8rem;
+    text-align: left;
+    background: var(--accent-soft);
+  }
+  .daily-forecast-table tbody td {
+    display: grid;
+    grid-template-columns: 7rem minmax(0, 1fr);
+    padding: 0.45rem 0.8rem;
+    white-space: normal;
+  }
+  .daily-forecast-table td::before { content: attr(data-label); color: var(--muted); }
+  .daily-forecast-table td > details { grid-column: 2; }
+}

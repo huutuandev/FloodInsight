@@ -14,6 +14,8 @@ import {
 } from "./data";
 import { DataManagement, MachineLearning } from "./operation-panels";
 import { ForecastPanel } from "./forecast-panel";
+import { shiftDay } from "./provider-rainfall";
+import { localDay } from "./data";
 import { RecentRainfall } from "./recent-rainfall";
 import { Analytics, MapSection, Overview } from "./weather-panels";
 import { QueryError, StatePill } from "./ui";
@@ -42,10 +44,10 @@ const navigation = [
   },
   {
     name: "Machine Learning",
-    vietnamese: "Khai phá dữ liệu & AI",
-    short: "Mô hình AI",
+    vietnamese: "Dự báo mưa & mô hình",
+    short: "Dự báo mưa",
     icon: Sparkles,
-    detail: "Kết quả phân cụm thời tiết, ước tính lượng mưa ngày kế tiếp và phân loại cường độ mưa.",
+    detail: "Dự báo lượng mưa 7 ngày, đối chiếu với số đo trạm và đánh giá mô hình.",
   },
   {
     name: "Data Management",
@@ -126,6 +128,11 @@ function DashboardBody({ initialRange }: { initialRange: DateRange }) {
     setDraft(next);
     setRange(next);
     setFilterError("");
+  }
+
+  function selectForecastWeek() {
+    const today = localDay(new Date().toISOString());
+    setPreset(shiftDay(today, 1), shiftDay(today, 7));
   }
 
   function go(next: Section) {
@@ -213,8 +220,8 @@ function DashboardBody({ initialRange }: { initialRange: DateRange }) {
                   <button type="button" className="button primary" onClick={() => go("Da Nang Map")}>
                     Mở Bản đồ Ngập lụt GIS <ArrowUpRight size={16} />
                   </button>
-                  <button type="button" className="button secondary" onClick={() => go("Machine Learning")}>
-                    Xem Mô hình AI & Phân cụm <Sparkles size={15} />
+                  <button type="button" className="button secondary" onClick={() => { selectForecastWeek(); go("Machine Learning"); }}>
+                    Xem dự báo mưa 7 ngày <CloudRain size={15} />
                   </button>
                 </div>
               </div>
@@ -303,6 +310,9 @@ function DashboardBody({ initialRange }: { initialRange: DateRange }) {
 
               <div className="preset-bar">
                 <span className="preset-label">Chọn nhanh:</span>
+                {section === "Machine Learning" && <button type="button" className="button secondary preset-btn" onClick={selectForecastWeek}>
+                  7 ngày tới
+                </button>}
                 <button type="button" className="button secondary preset-btn" onClick={() => {
                   if (selectedCoverage) setPreset(selectedCoverage.first_date, selectedCoverage.last_date);
                 }}>Toàn bộ dữ liệu</button>

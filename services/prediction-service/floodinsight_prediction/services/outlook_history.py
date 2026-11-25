@@ -1,6 +1,26 @@
 from floodinsight_ml.storage import connect
 
 
+def verification_by_lead(rows):
+    # History is ordered newest issuance first for each target day.
+    by_lead = {lead: {} for lead in range(1, 8)}
+    for row in rows:
+        if row["lead_days"] in by_lead:
+            by_lead[row["lead_days"]].setdefault(row["target_date"], row)
+    result = []
+    for lead, days in by_lead.items():
+        verified = [row for row in days.values() if row["error_mm"] is not None]
+        count = len(verified)
+        result.append({
+            "lead_days": lead, "forecast_days": len(days), "verified_days": count,
+            "mae_mm": sum(abs(row["error_mm"]) for row in verified) / count if count else None,
+            "bias_mm": sum(row["error_mm"] for row in verified) / count if count else None,
+            "misses": sum(row["rainfall_mm"] < 25 <= row["observed_mm"] for row in verified) if count else None,
+            "false_alarms": sum(row["observed_mm"] < 25 <= row["rainfall_mm"] for row in verified) if count else None,
+        })
+    return result
+
+
 def save_outlook(version_id, location, issued, today, predictions):
     with connect() as conn:
         # Serialize publication for the same point, version and local date.
@@ -47,14 +67,22 @@ def outlook_history(location, start, end, lead=None, *, version=None, issue_date
                   AND p.target_hour_utc >= warehouse_local_day_start(%s)
                   AND p.target_hour_utc < warehouse_local_day_start(%s::date + 1)
             )
-            SELECT {distinct} version, issued_at, target_date, rainfall_mm,
+            SELECT {distinct} version, issued_at, target_date, outlook.rainfall_mm,
                    target_date - issue_date AS lead_days,
-                   issue_date - 13 AS input_start, issue_date - 7 AS input_end
+                   issue_date - 13 AS input_start, issue_date - 7 AS input_end,
+                   g.station_code, g.rainfall_mm::float8 AS observed_mm, g.intervals,
+                   CASE WHEN g.intervals = 143 AND g.observed_through =
+                           warehouse_local_day_start(target_date + 1) - interval '10 minutes'
+                        THEN warehouse_local_day_start(target_date + 1)
+                   END AS missing_midnight,
+                   CASE WHEN g.intervals = 144 AND target_date <
+                       (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
+                       THEN outlook.rainfall_mm - g.rainfall_mm::float8 END AS error_mm
             FROM outlook
+            LEFT JOIN gauge_daily_observations g ON %s = 'hai-chau'
+                AND g.station_code = '430018' AND g.local_date = target_date
             WHERE (%s::int IS NULL OR target_date - issue_date = %s)
               AND (%s::text IS NULL OR version = %s)
               AND (%s::date IS NULL OR issue_date = %s)
             ORDER BY target_date DESC, issued_at DESC, version
-            LIMIT %s
-        """, (location, start, end, lead, lead, version, version, issue_date, issue_date,
-              3660 if latest_per_day else 210)).fetchall()
+        """, (location, start, end, location, lead, lead, version, version, issue_date, issue_date)).fetchall()

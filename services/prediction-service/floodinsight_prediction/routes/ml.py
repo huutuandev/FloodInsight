@@ -15,7 +15,7 @@ from floodinsight_ml.schemas import Location, Version
 from floodinsight_ml.storage import DataUnavailable, Models, SOURCE
 
 from ..services.regression import train_regressor
-from ..services.outlook_history import outlook_history, save_outlook
+from ..services.outlook_history import outlook_history, save_outlook, verification_by_lead
 
 router = APIRouter(prefix="/prediction", tags=["rainfall prediction"])
 
@@ -123,8 +123,15 @@ def history(location: Location, lead_days: Annotated[int | None, Query(ge=1, le=
     if start_date is not None or end_date is not None:
         if start_date is None or end_date is None or not 0 <= (end_date - start_date).days < 3660:
             raise DataUnavailable("Select an ordered date range of up to 3,660 days")
-        return outlook_history(location, start_date, end_date, lead_days, latest_per_day=True)
+        return outlook_history(location, start_date, end_date, lead_days, latest_per_day=lead_days is None)
     return outlook_history(location, today - 7 * DAY, today + 7 * DAY, lead_days)
+
+
+@router.get("/outlook/verification")
+@warehouse_errors
+def verification(location: Location):
+    today = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).date()
+    return verification_by_lead(outlook_history(location, today - 90 * DAY, today - DAY))
 
 
 @router.post("/train")

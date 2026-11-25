@@ -12,7 +12,7 @@ import {
 } from "./data";
 import { latestRain, periods, rainfallOption, type Period } from "./rainfall";
 import { Empty, Loading, Panel, QueryError, Resource, StatePill } from "./ui";
-import type { Markers } from "./station-map";
+import type { FloodReport, Markers } from "./station-map";
 
 type Theme = "dark" | "light";
 const StationMap = dynamic<Markers>(() => import("./station-map"), {
@@ -190,10 +190,15 @@ export function Analytics({ scope, theme, coverage }: Pick<AreaProps, "scope" | 
 
 export function MapSection({ scope, theme, points, weather, onSelect }: AreaProps) {
   const [onlySelected, setOnlySelected] = useState(false);
+  const [eventId, setEventId] = useState("");
+  const archive = useCollection<FloodReport>("flood-reports", { location: scope.location }, Boolean(scope.location));
+  const reports = (archive.data ?? []).filter(row => row.event_id === eventId);
+  const event = reports[0];
+  const mapScope = event ? { ...scope, start_date: event.event_date, end_date: event.event_date } : scope;
   const visible = useMemo(() => onlySelected ? points.filter((p) => p.code === scope.location) : points,
     [onlySelected, points, scope.location]);
   const query = useCollection<Rain>("rainfall/daily", {
-    start_date: scope.start_date, end_date: scope.end_date, source, location: onlySelected ? scope.location : undefined,
+    start_date: mapScope.start_date, end_date: mapScope.end_date, source, location: onlySelected ? scope.location : undefined,
   });
   const latest = useMemo(() => latestRain(query.data ?? []), [query.data]);
   const selected = points.find((point) => point.code === scope.location);
@@ -204,11 +209,30 @@ export function MapSection({ scope, theme, points, weather, onSelect }: AreaProp
       <Panel
         title="Bản đồ không gian GIS & Radar mây mưa Đà Nẵng"
         headingLabel="Da Nang sampling map"
-        subtitle="Màu điểm theo ngày ERA5 gần nhất trong bộ lọc. RainViewer phát lại ảnh radar khoảng 2 giờ gần nhất."
+        subtitle={event ? `Mưa ERA5 ngày ${event.event_date}. Ký hiệu tím đánh dấu vị trí ghi nhận có tọa độ.` : "Màu điểm theo ngày ERA5 gần nhất trong bộ lọc. RainViewer phát lại ảnh radar khoảng 2 giờ gần nhất."}
         action={<label className="checkbox"><input type="checkbox" aria-label="Selected point only" checked={onlySelected}
           onChange={(event) => setOnlySelected(event.target.checked)} />Chỉ xem trạm đã chọn</label>}
       >
-        <StationMap points={visible} selected={scope.location} onSelect={onSelect} latest={latest} weather={weather} />
+        <label>Đợt ngập lịch sử{" "}
+          <select value={event?.event_id ?? ""} onChange={e => setEventId(e.target.value)}>
+            <option value="">Theo bộ lọc ngày và radar gần nhất</option>
+            {[...new Map((archive.data ?? []).map(r => [r.event_id, r])).values()].map(r =>
+              <option key={r.event_id} value={r.event_id}>{r.title}</option>)}
+          </select>
+        </label>
+        {archive.error && <QueryError error={archive.error} retry={() => void archive.refetch()} />}
+        {archive.data?.length === 0 && <p>Chưa có báo cáo lịch sử cho điểm đang chọn.</p>}
+        {event?.river_context?.map(h => <p key={h.source_url}>Thủy văn cùng ngày · {h.station_or_site} · {h.time_description} · {h.level_m} m so với {h.reference_level}. <a href={h.source_url} target="_blank" rel="noreferrer">Nguồn quan sát</a></p>)}
+        {reports.map(r => <p key={r.id}><strong>{r.place}</strong> · {r.status === "flooded" ? "Ghi nhận ngập" : r.status === "confirmed_dry" ? "Đã xác nhận không ngập" : "Chưa rõ"}
+          {r.depth_cm == null ? " · Chưa có số đo độ sâu" : ` · ${r.depth_cm} cm`}
+          {r.context_note && <> · {r.context_note}</>}
+          {r.elevation_m != null && r.elevation_source && <> · <a href={r.elevation_source} target="_blank" rel="noreferrer">Cao độ ô lưới GLO-90: {r.elevation_m} m</a></>}
+          {" · "}{r.sources.map(s => <a key={s.url} href={s.url} target="_blank" rel="noreferrer">{s.publisher} </a>)}
+          {r.geometry_source && <> · <a href={r.geometry_source} target="_blank" rel="noreferrer">{r.road_geometry ? "Đối chiếu tuyến đường OSM" : "Tọa độ giao lộ"}</a></>}
+        </p>)}
+        {event && !query.isPending && !query.error && !latest[scope.location] && <p>Kho chưa có lượng mưa ERA5 cho điểm và ngày này.</p>}
+        <StationMap points={visible} selected={scope.location} onSelect={onSelect} latest={latest} weather={event ? [] : weather}
+          historical={Boolean(event)} reports={reports} />
         <div className="map-legend" aria-label="Daily rainfall intensity legend">
           {[
             ["#94A3B8", "Chưa có dữ liệu"],
@@ -226,7 +250,7 @@ export function MapSection({ scope, theme, points, weather, onSelect }: AreaProp
           <button key={point.code} type="button" aria-pressed={point.code === scope.location} onClick={() => onSelect(point.code)}>
             <MapPin size={16} /><span>{point.name}</span><span>{displayNumber(latest[point.code]?.rainfall_total_mm)} mm</span>
           </button>)}</div> : <Empty title="Không có điểm lấy mẫu" detail="Danh sách điểm sẽ xuất hiện sau khi chạy thu thập hoặc ETL." />}
-        {selected && <div className="station-detail">
+        {selected && !event && <div className="station-detail">
           <strong style={{ color: "var(--heading)", fontSize: "15px" }}>{selected.name}</strong>
           <p>Dữ liệu mô hình tức thời · {localTime(selectedWeather?.valid_at)} ICT</p>
           <dl>
@@ -239,6 +263,6 @@ export function MapSection({ scope, theme, points, weather, onSelect }: AreaProp
         </div>}
       </Panel>
     </div>
-    <RainfallPanel scope={scope} theme={theme} compact />
+    <RainfallPanel scope={mapScope} theme={theme} compact />
   </>;
 }

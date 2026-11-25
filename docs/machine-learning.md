@@ -173,3 +173,14 @@ Supervised features start at target day minus 8 (`D-8`) to enforce the data avai
 
 Run `python -m pytest` after installing `requirements-dev.txt` from each service directory. The database tests are opt-in with `FLOODINSIGHT_RUN_ML_DB_TESTS=1` on a disposable database named `floodinsight_ml_test`. Populate the benchmark dates above and the current seven eligible lag dates for Hải Châu via the historical warehouse API. Each suite checks that deleting its stored results and reissuing inference restores them from the same model. All nine ML service tests passed. All three trained models also served after their containers were recreated. The workspace export at `artifacts/ml-benchmark/` contains the three fitted Joblib files and a SHA-256-verified metrics manifest. These local benchmark files are ignored by Git. Deployment model volumes and registry entries are created through the training API.
 
+
+### Đối chiếu kỳ đo cuối ngày tại Hồ Thạc Gián
+
+Kiểm tra ngày 25/11/2026 trên API trạm Đà Nẵng, mã 430018 (station UUID
+`afb37e83-2759-11ec-8ef9-06552145a11a`). Với từng ngày từ 18 đến 24/11,
+phản hồi có 143 mốc từ 00:10 đến 23:50 ICT. Trong cửa sổ (00:00, 00:00
+ngày kế tiếp], mốc thiếu duy nhất là 00:00 cuối ngày. Truy vấn riêng qua
+ranh giới 23–24/11 cũng có 23:50 và 00:10, thiếu 00:00. Theo quy ước của
+bộ nhập (timestamp kết thúc kỳ), tổng ngày thiếu kỳ 23:50–00:00. Giữ
+nguyên tổng từng phần và loại ngày đó khỏi tính sai số. Kết quả này chỉ
+xác nhận nội dung API trả về tại lần kiểm tra.

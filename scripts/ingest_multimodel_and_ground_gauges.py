@@ -293,12 +293,37 @@ def parse_args():
     parser.add_argument("--days", type=int, choices=range(1, 8), default=7)
     parser.add_argument("--past-days", type=int, choices=range(0, 15), default=8)
     parser.add_argument("--interval-seconds", type=int, default=0, help="Repeat import; 0 runs once")
+    parser.add_argument("--gauge-url", help="Internal daily station observation endpoint")
     parser.add_argument("--warehouse-url", help="Sync the ERA5 input day before each scheduled import")
     parser.add_argument("--prediction-url", help="Publish the daily Hải Châu outlook")
     parser.add_argument("--timeout", type=float, default=20)
     parser.add_argument("--retries", type=int, default=3)
     parser.add_argument("--url", default=API_URL)
     return parser.parse_args()
+
+
+def archive_gauge(url):
+    with urlopen(url, timeout=25) as response:
+        data = json.load(response)["data"]
+    station = data["station"]["code"]
+    if station != "430018":
+        raise ValueError("Unexpected station for Hai Chau")
+    engine = create_engine(DatabaseSettings().url())
+    try:
+        with engine.begin() as conn:
+            for day in data["days"]:
+                conn.execute(text("""
+                    INSERT INTO gauge_daily_observations
+                        (station_code, local_date, rainfall_mm, intervals, observed_through)
+                    VALUES (:station, :date, :mm, :intervals, :through)
+                    ON CONFLICT (station_code, local_date) DO UPDATE SET
+                        rainfall_mm = excluded.rainfall_mm, intervals = excluded.intervals,
+                        observed_through = excluded.observed_through
+                    WHERE excluded.observed_through >= gauge_daily_observations.observed_through
+                      AND excluded.intervals >= gauge_daily_observations.intervals
+                """), dict(day, station=station))
+    finally:
+        engine.dispose()
 
 
 def refresh_archive(warehouse_url):
@@ -326,6 +351,13 @@ if __name__ == "__main__":
     if args.interval_seconds < 0:
         raise SystemExit("--interval-seconds must be nonnegative")
     while True:
+        if args.gauge_url:
+            try:
+                archive_gauge(args.gauge_url)
+            except Exception:
+                if not args.interval_seconds:
+                    raise
+                LOG.exception("Station archive refresh failed")
         if args.warehouse_url:
             try:
                 refresh_archive(args.warehouse_url)

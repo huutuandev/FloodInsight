@@ -3,6 +3,20 @@ from sqlalchemy import create_engine, text
 from ..config import DatabaseSettings
 
 QUERIES = {
+    "flood_reports": """
+        SELECT e.id AS event_id, e.event_date, e.title, coalesce(r.site_location,e.location) AS location,
+               r.road_geometry, r.context_note, r.elevation_m, r.elevation_source,
+               (SELECT jsonb_agg(to_jsonb(h) ORDER BY h.station_or_site) FROM river_observations h
+                WHERE h.observed_date=e.event_date AND coalesce(r.site_location,e.location)='hai-chau') AS river_context,
+               r.id, r.place, r.precision_level, r.status, r.depth_cm,
+               r.latitude, r.longitude, r.geometry_source,
+               (SELECT jsonb_agg(jsonb_build_object('publisher', s.publisher, 'url', s.url)
+                                 ORDER BY s.url) FROM flood_report_sources s
+                WHERE s.report_id = r.id) AS sources
+        FROM flood_events e JOIN flood_reports r ON r.event_id = e.id
+        WHERE (CAST(:location AS text) IS NULL OR coalesce(r.site_location,e.location) = :location)
+        ORDER BY e.event_date DESC, e.id, r.id
+    """,
     "rainfall_coverage": """
         SELECT l.code AS location, d.code AS source,
                min(f.local_date) AS first_date, max(f.local_date) AS last_date,

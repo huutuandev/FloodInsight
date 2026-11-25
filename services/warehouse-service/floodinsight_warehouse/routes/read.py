@@ -21,6 +21,11 @@ def locations(filters: Annotated[LocationFilters, Query()]):
     return page("locations", filters)
 
 
+@router.get("/flood-reports")
+def flood_reports(filters: Annotated[LocationFilters, Query()]):
+    return page("flood_reports", filters)
+
+
 @router.get("/weather/observations")
 def observations(filters: Annotated[Filters, Query()]):
     return page("observations", filters)

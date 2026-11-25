@@ -85,7 +85,7 @@ services:
   forecast-refresh:
     <<: *runtime
     build: ./services/warehouse-service
-    command: ["python", "/app/scripts/ingest_multimodel_and_ground_gauges.py", "--interval-seconds", "${FLOODINSIGHT_FORECAST_REFRESH_SECONDS:-21600}", "--warehouse-url", "http://warehouse-service:8000", "--prediction-url", "http://prediction-service:8000"]
+    command: ["python", "/app/scripts/ingest_multimodel_and_ground_gauges.py", "--interval-seconds", "${FLOODINSIGHT_FORECAST_REFRESH_SECONDS:-21600}", "--gauge-url", "http://frontend:3000/api/backend/rainfall/nearby-gauge?location=hai-chau", "--warehouse-url", "http://warehouse-service:8000", "--prediction-url", "http://prediction-service:8000"]
     volumes:
       - ./scripts/ingest_multimodel_and_ground_gauges.py:/app/scripts/ingest_multimodel_and_ground_gauges.py:ro
     environment:
