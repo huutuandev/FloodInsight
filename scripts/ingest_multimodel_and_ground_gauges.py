@@ -327,9 +327,45 @@ def archive_gauge(url):
 
 
 def refresh_archive(warehouse_url):
-    today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
-    day = (today - timedelta(days=7)).isoformat()
-    window = {"start_date": day, "end_date": day, "max_batches": 9}
+    # Open-Meteo ERA5 is published with a delay. Keep the warehouse current
+    # through the latest day accepted by the historical backfill API.
+    latest_available = datetime.now(timezone.utc).date() - timedelta(days=5)
+    engine = create_engine(DatabaseSettings().url(), pool_pre_ping=True)
+    try:
+        with engine.connect() as conn:
+            coverage = conn.execute(text("""
+                SELECT l.code, max(f.local_date) AS last_date
+                FROM fact_rainfall_daily f
+                JOIN dim_location l ON l.id = f.location_id
+                JOIN dim_weather_source w ON w.id = f.weather_source_id
+                JOIN data_sources d ON d.id = w.data_source_id
+                WHERE d.code = 'open-meteo-archive-era5'
+                GROUP BY l.code
+            """)).all()
+    finally:
+        engine.dispose()
+
+    by_location = {row.code: row.last_date for row in coverage}
+    expected = {"hai-chau", "thanh-khe", "lien-chieu", "cam-le", "ngu-hanh-son",
+                "son-tra", "hoa-vang", "hoa-bac", "hoa-khuong"}
+    known_dates = [by_location.get(code) for code in expected]
+    # Missing points need the entire requested interval seeded; if one point
+    # has no coverage yet, start from the oldest known date among its peers.
+    present_dates = [day for day in known_dates if day is not None]
+    start = (min(present_dates) + timedelta(days=1)
+             if present_dates and all(day is not None for day in known_dates)
+             else min(present_dates) if present_dates else latest_available)
+    if start > latest_available:
+        LOG.info("ERA5 archive is current through %s", latest_available)
+        return
+    # The archive pipeline creates one checkpoint per location per month.
+    # Limit each refresh to the current month so earlier unfinished batches
+    # remain in range and can be retried on the next run.
+    month_start = start.replace(day=1)
+    next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    window_end = min(latest_available, next_month - timedelta(days=1))
+    window = {"start_date": month_start.isoformat(), "end_date": window_end.isoformat(),
+              "max_batches": 120}
     for path, payload in (
         ("backfill", window | {"refresh_incomplete": True}),
         ("etl/run", window),
@@ -342,7 +378,7 @@ def refresh_archive(warehouse_url):
         with urlopen(request, timeout=180) as response:
             run = json.load(response)
         if run["status"] != "succeeded":
-            raise RuntimeError(f"ERA5 {path} for {day}: {run.get('error_message')}")
+            raise RuntimeError(f"ERA5 {path} for {month_start} to {window_end}: {run.get('error_message')}")
 
 
 if __name__ == "__main__":

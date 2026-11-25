@@ -27,6 +27,8 @@ class PredictionTraining(DailyTraining):
 
 class OutlookPublication(BaseModel):
     location: Location
+    start_date: date | None = None
+    end_date: date | None = None
 
 
 def registry(request):
@@ -56,7 +58,7 @@ def train_outlook(payload: DailyTraining, request: Request):
     })
 
 
-def build_outlook(location, request, publish=False):
+def build_outlook(location, request, publish=False, start_date=None, end_date=None):
     registry = outlook_registry(request)
     model, artifacts = registry.load(None)
     metadata = model["training_metadata"]
@@ -65,11 +67,18 @@ def build_outlook(location, request, publish=False):
     issued = datetime.now(timezone.utc)
     zone = ZoneInfo("Asia/Ho_Chi_Minh")
     today = issued.astimezone(zone).date()
+    if (start_date is None) != (end_date is None):
+        raise DataUnavailable("Provide both start_date and end_date")
+    if start_date is not None and (end_date < start_date or (end_date - start_date).days >= 3660):
+        raise DataUnavailable("Select an ordered date range of up to 3,660 days")
+
     saved = outlook_history(location, today + DAY, today + 7 * DAY,
                             version=model["version"], issue_date=today)
-    published = len(saved) == 7
-    if publish and published:
-        return {"published": False, "version": model["version"]}
+    saved_by_date = {row["target_date"]: row for row in saved}
+    wanted_dates = [today + lead * DAY for lead in range(1, 8)
+                    if (start_date is None or today + lead * DAY >= start_date)
+                    and (end_date is None or today + lead * DAY <= end_date)]
+    published = bool(wanted_dates) and all(target in saved_by_date for target in wanted_dates)
 
     def response(predictions, issue_time):
         return {"version": model["version"], "issued_at": issue_time.isoformat(), "location": location,
@@ -77,42 +86,67 @@ def build_outlook(location, request, publish=False):
                 "availability": metadata["scope"]["availability"], "predictions": predictions,
                 "published": published}
 
-    def result(lead, target, mm):
+    def result(lead, target, mm, issued_at=None):
         metrics = metadata["evaluation"][str(lead)]["metrics"]["test"]
-        return {"lead_days": lead, "target_date": target.isoformat(), "rainfall_mm": mm,
-                "test_mae_mm": metrics["xgboost"]["mae_mm"],
-                "baseline_mae_mm": metrics["lag_8_persistence"]["mae_mm"]}
+        row = {"lead_days": lead, "target_date": target, "rainfall_mm": mm,
+               "test_mae_mm": metrics["xgboost"]["mae_mm"],
+               "baseline_mae_mm": metrics["lag_8_persistence"]["mae_mm"]}
+        if issued_at is not None:
+            row["issued_at"] = issued_at.isoformat()
+            row["published"] = True
+        return row
 
-    if published:
-        predictions = [result(row["lead_days"], row["target_date"], row["rainfall_mm"])
-                       for row in sorted(saved, key=lambda row: row["lead_days"])]
-        return response(predictions, saved[0]["issued_at"])
+    if not wanted_dates:
+        return response([], issued)
+
+    if wanted_dates and all(target in saved_by_date for target in wanted_dates):
+        if publish:
+            return {"published": True, "version": model["version"]}
+        predictions = [result(saved_by_date[target]["lead_days"], target,
+                              saved_by_date[target]["rainfall_mm"], saved_by_date[target]["issued_at"])
+                       for target in wanted_dates]
+        return response(predictions, saved_by_date[wanted_dates[0]]["issued_at"])
     rows = daily_rows(today - 13 * DAY, today - 7 * DAY, location)
     days = {row["day"]: row for row in rows}
-    predictions = []
+    generated = {}
     for lead, artifact in sorted(artifacts.items()):
         target = today + lead * DAY
+        if target not in wanted_dates or target in saved_by_date:
+            continue
         features = lag_features(days, target, issued, "recorded", lead)
         if features is None:
             raise DataUnavailable("Seven complete ERA5 input days must be available at issuance")
         frame = pd.DataFrame([features], columns=FEATURES).astype(float)
-        predictions.append(result(lead, target, max(0.0, float(artifact.predict(frame)[0]))))
+        generated[target] = result(lead, target, max(0.0, float(artifact.predict(frame)[0])))
+    selected = [generated[target] for target in wanted_dates if target in generated]
     if publish:
-        return {"published": save_outlook(model["id"], rows[-1], issued, today, predictions),
-                "version": model["version"]}
-    return response(predictions, issued)
+        save_outlook(model["id"], rows[-1], issued, today, selected)
+        return {"published": bool(selected), "version": model["version"]}
+
+    # Reuse rows already published today and preview only missing dates.
+    combined = []
+    for target in wanted_dates:
+        stored = saved_by_date.get(target)
+        if stored:
+            combined.append(result(stored["lead_days"], stored["target_date"], stored["rainfall_mm"],
+                                   stored["issued_at"]))
+        elif target in generated:
+            combined.append(generated[target])
+    return response(combined, issued)
 
 
 @router.get("/outlook")
 @warehouse_errors
-def outlook(location: Location, request: Request):
-    return build_outlook(location, request)
+def outlook(location: Location, request: Request, start_date: date | None = None,
+            end_date: date | None = None):
+    return build_outlook(location, request, start_date=start_date, end_date=end_date)
 
 
 @router.post("/outlook/publish")
 @warehouse_errors
 def publish_outlook(payload: OutlookPublication, request: Request):
-    return build_outlook(payload.location, request, publish=True)
+    return build_outlook(payload.location, request, publish=True,
+                         start_date=payload.start_date, end_date=payload.end_date)
 
 
 @router.get("/outlook/history")

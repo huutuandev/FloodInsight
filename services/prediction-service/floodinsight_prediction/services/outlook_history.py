@@ -26,17 +26,19 @@ def save_outlook(version_id, location, issued, today, predictions):
         # Serialize publication for the same point, version and local date.
         key = f"outlook:{version_id}:{location['location_id']}:{today}"
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (key,))
-        existing = conn.execute("""
-            SELECT 1 FROM prediction_results
-            WHERE model_version_id = %s AND location_id = %s
-              AND issued_at >= warehouse_local_day_start(%s)
-              AND issued_at < warehouse_local_day_start(%s::date + 1)
-            LIMIT 1
-        """, (version_id, location["location_id"], today, today)).fetchone()
-        if existing:
-            return False
+        existing_dates = {row["local_date"] for row in conn.execute("""
+            SELECT t.local_date
+            FROM prediction_results p
+            JOIN dim_time t ON t.hour_start_utc = p.target_hour_utc
+            WHERE p.model_version_id = %s AND p.location_id = %s
+              AND p.issued_at >= warehouse_local_day_start(%s)
+              AND p.issued_at < warehouse_local_day_start(%s::date + 1)
+        """, (version_id, location["location_id"], today, today)).fetchall()}
+        inserted = False
         for row in predictions:
             target = row["target_date"]
+            if target in existing_dates:
+                continue
             conn.execute("INSERT INTO dim_date (local_date) VALUES (%s) ON CONFLICT DO NOTHING", (target,))
             instant = conn.execute(
                 "SELECT warehouse_local_day_start(%s::date) AS instant", (target,)
@@ -48,7 +50,8 @@ def save_outlook(version_id, location, issued, today, predictions):
                 VALUES (%s, %s, %s, %s, %s, %s)
             """, (version_id, location["location_id"], location["weather_source_id"],
                   instant, issued, row["rainfall_mm"]))
-        return True
+            inserted = True
+        return inserted
 
 
 def outlook_history(location, start, end, lead=None, *, version=None, issue_date=None, latest_per_day=False):

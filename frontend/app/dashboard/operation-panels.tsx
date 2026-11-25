@@ -90,14 +90,18 @@ function Confusion({ labels, matrix, theme }: { labels: string[]; matrix: number
   }} />;
 }
 
-export function MachineLearning({ scope, filterForecasts, locations, theme }: { scope: Scope; filterForecasts: boolean; locations: Location[]; theme: Theme }) {
+export function MachineLearning({ scope, filterForecasts, trainingRange, locations, theme }: {
+  scope: Scope; filterForecasts: boolean; trainingRange?: { start_date: string; end_date: string };
+  locations: Location[]; theme: Theme;
+}) {
   const clusters = useData<Cluster[]>("clustering/results", { ...scope, limit: 500 });
   const clusterMetrics = useData<Evaluation>("clustering/metrics");
   const predictMetrics = useData<Evaluation>("predictions/metrics");
   const classMetrics = useData<Evaluation>("classifications/metrics");
   return <>
     <ForecastPanel location={scope.location}
-      range={filterForecasts ? { start_date: scope.start_date, end_date: scope.end_date } : undefined} />
+      range={filterForecasts ? { start_date: scope.start_date, end_date: scope.end_date } : undefined}
+      trainingRange={trainingRange} />
     <OutlookHistory location={scope.location} range={filterForecasts ? scope : undefined} />
     <Panel
       title="Phân cụm hình thế thời tiết (K-Means Clustering)"

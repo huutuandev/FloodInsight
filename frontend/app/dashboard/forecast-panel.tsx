@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { displayNumber, localTime, request, useCollection, useData, type Classification, type DateRange, type Prediction } from "./data";
-import { shiftDay } from "./provider-rainfall";
+import { shiftDay, useRainfallClock } from "./provider-rainfall";
 import { Empty, Loading, Panel, QueryError } from "./ui";
 
 type Outlook = {
@@ -15,6 +15,7 @@ type Outlook = {
   predictions: {
     lead_days: number; target_date: string; rainfall_mm: number;
     test_mae_mm: number; baseline_mae_mm: number;
+    issued_at?: string; published?: boolean;
   }[];
 };
 
@@ -35,18 +36,37 @@ const labels: Record<string, string> = {
   "Heavy Rain": "Mưa to", "Moderate/Heavy Rain": "Mưa vừa hoặc to",
 };
 
-export function ForecastPanel({ location, range }: { location: string; range?: DateRange }) {
-  const query = useData<Outlook>("predictions/outlook", { location }, Boolean(location), 5 * 60_000);
+export function ForecastPanel({ location, range, trainingRange }: {
+  location: string; range?: DateRange; trainingRange?: DateRange;
+}) {
+  const { today } = useRainfallClock();
+  const tomorrow = shiftDay(today, 1);
+  const lastOutlookDay = shiftDay(today, 7);
+  const currentForecastSelection = !range ||
+    (range.end_date >= tomorrow && range.start_date <= lastOutlookDay);
+  const queryParams = { location, ...range };
+  const query = useData<Outlook>("predictions/outlook", queryParams,
+    Boolean(location && currentForecastSelection), 5 * 60_000);
   const scope = { location, ...range };
   const historical = useData<DailyForecast[]>("predictions/outlook/history", scope, Boolean(location && range));
   const legacyRain = useCollection<Prediction>("predictions/results", scope, Boolean(location && range));
   const legacyClasses = useCollection<Classification>("classifications/results", scope, Boolean(location && range));
   const client = useQueryClient();
   const publish = useMutation({
-    mutationFn: (point: string) => request("predictions/outlook/publish", undefined, undefined, { location: point }),
+    mutationFn: (selection: { location: string } & Partial<DateRange>) =>
+      request("predictions/outlook/publish", undefined, undefined, selection),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["predictions/outlook"] });
       void client.invalidateQueries({ queryKey: ["predictions/outlook/history"] });
+    },
+  });
+  const train = useMutation({
+    mutationFn: () => request("predictions/outlook/train", undefined, undefined, {
+      location, ...trainingRange, availability: "recorded",
+    }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["predictions/outlook"] });
+      void client.invalidateQueries({ queryKey: ["predictions/metrics"] });
     },
   });
   const rain = new Map<string, DailyForecast>();
@@ -62,10 +82,11 @@ export function ForecastPanel({ location, range }: { location: string; range?: D
   for (const row of legacyRain.data ?? []) add(row);
   const data = query.data;
   for (const row of data?.predictions ?? []) {
-    if (data && (data.published || !rain.has(row.target_date))) {
-      add({ ...row, issued_at: data.issued_at, preview: !data.published });
+    const published = row.published ?? data?.published ?? false;
+    if (data && (published || !rain.has(row.target_date))) {
+      add({ ...row, issued_at: row.issued_at ?? data.issued_at, preview: !published });
       const current = rain.get(row.target_date);
-      if (current?.issued_at === data.issued_at) {
+      if (current?.issued_at === (row.issued_at ?? data.issued_at)) {
         rain.set(row.target_date, {
           ...current, test_mae_mm: row.test_mae_mm, baseline_mae_mm: row.baseline_mae_mm,
         });
@@ -79,17 +100,25 @@ export function ForecastPanel({ location, range }: { location: string; range?: D
   const dates = range && selectedDays > 0 && selectedDays <= 31
     ? Array.from({ length: selectedDays }, (_, index) => shiftDay(range.start_date, index))
     : [...new Set([...rain.keys(), ...classes.keys()])].sort();
-  const pending = query.isPending || Boolean(range && (historical.isPending || legacyRain.isPending || legacyClasses.isPending));
-  const issues = range ? [historical, legacyRain, legacyClasses, query] : [query];
+  const pending = (currentForecastSelection && query.isPending)
+    || Boolean(range && (historical.isPending || legacyRain.isPending || legacyClasses.isPending));
+  const issues = range ? [historical, legacyRain, legacyClasses, ...(currentForecastSelection ? [query] : [])] : [query];
 
   return <Panel title={range ? "Dự báo lượng mưa và phân loại theo ngày" : "Mô hình FloodInsight: Dự báo mưa 7 ngày tới"}
     headingLabel="FloodInsight rainfall forecast"
-    subtitle={range ? `Khoảng ngày áp dụng: ${range.start_date} đến ${range.end_date} (ICT).`
-      : "Mô hình XGBoost dự báo từng ngày từ lịch sử ERA5 đã lưu."}
-    action={query.data && !query.data.published && <button className="button secondary" type="button"
-      disabled={publish.isPending} onClick={() => publish.mutate(location)}>Phát hành dự báo</button>}>
-    {publish.error && publish.variables === location &&
-      <QueryError error={publish.error} retry={() => publish.mutate(location)} />}
+    subtitle={range ? `Ngày đã chọn: ${range.start_date} đến ${range.end_date} (ICT). Dự báo mới tối đa 7 ngày tới.`
+      : "Mô hình dự báo riêng cho từng hạn từ 1 đến 7 ngày, dùng lịch sử ERA5 đã lưu."}
+    action={<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      {trainingRange && <button className="button secondary" type="button" disabled={!location || train.isPending}
+        onClick={() => train.mutate()}>{train.isPending ? "Đang huấn luyện 7 hạn…" : "Huấn luyện mô hình 7 ngày"}</button>}
+      {query.data && !query.data.published && <button className="button secondary" type="button"
+        disabled={publish.isPending} onClick={() => publish.mutate({ location, ...range })}>
+        {range ? "Phát hành các ngày đã chọn" : "Phát hành dự báo 7 ngày"}</button>}
+    </div>}>
+    {train.error && <QueryError error={train.error} retry={() => train.mutate()} />}
+    {train.isSuccess && <p className="chart-note" role="status">Đã huấn luyện xong 7 mô hình theo hạn dự báo.</p>}
+    {publish.error &&
+      <QueryError error={publish.error} retry={() => publish.mutate({ location, ...range })} />}
     {!location ? <Empty title="Chọn điểm lấy mẫu để xem dự báo" /> : <>
       {issues.map((item, index) => item.error
         && <QueryError key={index} error={item.error} retry={() => void item.refetch()} />)}

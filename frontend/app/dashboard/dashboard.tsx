@@ -100,11 +100,16 @@ function DashboardBody({ initialRange }: { initialRange: DateRange }) {
   const weather = useData<Weather[]>("weather/latest", undefined, true, 60_000);
   const status = useData<Status>("system/status", undefined, true, 45_000);
   const points = useMemo(() => withWeatherLocations(locations.data ?? [], weather.data ?? []), [locations.data, weather.data]);
-  const coverage = useData<RainfallCoverage[]>("rainfall/coverage", { source });
+  const coverage = useData<RainfallCoverage[]>("rainfall/coverage", { source }, true, 5 * 60_000);
   const selected = points.some((point) => point.code === location) ? location :
     points.find((point) => point.code === "hai-chau")?.code ??
     points.find((point) => coverage.data?.some((row) => row.location === point.code))?.code ?? points[0]?.code ?? "";
   const selectedCoverage = coverage.data?.find((row) => row.location === selected);
+  const trainingRange = selectedCoverage ? {
+    start_date: selectedCoverage.first_date > shiftDay(selectedCoverage.last_date, -730)
+      ? selectedCoverage.first_date : shiftDay(selectedCoverage.last_date, -730),
+    end_date: selectedCoverage.last_date,
+  } : undefined;
   const activeRange = range ?? recentCoveredRange(selectedCoverage, initialRange);
   const inputRange = draft ?? activeRange;
   const scope = { location: selected, ...activeRange };
@@ -335,7 +340,7 @@ function DashboardBody({ initialRange }: { initialRange: DateRange }) {
           {section === "Overview" && (
             <>
               {recentRainfall}
-              <ForecastPanel location={scope.location} />
+              <ForecastPanel location={scope.location} trainingRange={trainingRange} />
               <Overview
                 scope={scope}
                 points={points}
@@ -360,6 +365,7 @@ function DashboardBody({ initialRange }: { initialRange: DateRange }) {
             <MachineLearning
               scope={scope}
               filterForecasts={Boolean(range)}
+              trainingRange={trainingRange}
               locations={points}
               theme={theme}
             />

@@ -16,17 +16,19 @@ To regenerate deleted results, keep the same model version and artifact. For clu
 
 ## Seven-day rainfall outlook
 
-`POST /prediction/outlook/train` takes the same date window and availability mode as regular training. It saves seven XGBoost regressors in one version, one per lead day. Each uses the same seven complete ERA5 days available at issuance; only the target calendar date and target rainfall vary by lead. Training and evaluation shift the issue time back for each lead and embargo labels that would be unavailable at the next split. No provider forecast enters the feature set. The outlook is served through `GET /api/v1/predictions/outlook?location=hai-chau`.
+`POST /prediction/outlook/train` takes a historical date window, location, and availability mode. It saves seven XGBoost regressors in one version, one per lead day. Each uses the seven complete ERA5 days available at issuance; only the target calendar date and target rainfall vary by lead. Training and evaluation shift the issue time back for each lead and embargo labels that would be unavailable at the next split. No provider forecast enters the feature set. The dashboard's **Huấn luyện mô hình 7 ngày** button trains from up to the latest two years of coverage for the selected location. The gateway route is `POST /api/v1/predictions/outlook/train`.
+
+`GET /api/v1/predictions/outlook?location=hai-chau&start_date=YYYY-MM-DD&end_date=YYYY-MM-DD` filters the current outlook to the selected target dates. Fresh forecasts are available for tomorrow through seven days ahead. The dashboard also reads saved forecasts for past target dates; it does not generate new predictions for past dates. Manual publication accepts the same optional date range in `POST /api/v1/predictions/outlook/publish`, so selected days can be published independently. Without dates, the endpoint returns or publishes the full seven-day outlook.
 
 The dashboard shows the input dates and held-out MAE by lead, alongside a baseline using the last input day's rainfall. Inference checks the actual ERA5 receipt times. Refresh the warehouse archive and ETL as dates become available. If a required input day is missing, the endpoint reports insufficient data. Historical gauge readings are displayed separately for reference.
 
-### Publication and verification plan
+### Publication and verification
 
-1. Save each seven-day publication in `prediction_results`. The scheduled refresh publishes Hải Châu after attempting ERA5 sync. Manual publication uses `POST /api/v1/predictions/outlook/publish` with a location. A publication is atomic and unique per model version, location, and issue day (ICT). Opening the outlook reads the published values for the active model when available, otherwise it shows a preview.
+1. Save forecasts in `prediction_results`, keyed by model, location, target day, and issue time. The scheduled refresh publishes Hải Châu after attempting ERA5 sync. Manual publication can save only the selected dates or the full outlook. Existing dates for the same model, location, and issue day (ICT) are kept; missing dates can be added later. Opening the outlook combines saved values with previews for dates not yet published.
 2. Compare published results from `GET /api/v1/predictions/outlook/history` with Hồ Thạc Gián. Calculate differences only for completed days with all 144 ten-minute slots. The pilot reads gauge totals live over the latest eight dates. Published forecasts are retained independently of this display window.
 3. Next, persist timestamped station records in the warehouse, add coverage repair across all seven input dates, and evaluate forecast skill by location, lead, and rain intensity once enough comparable days have accumulated.
 
-The Machine Learning date filter selects forecast target dates. The forecast table combines the newest published result per day with the current outlook and archived next-day results. A published result takes precedence over a preview. A saved next-day classifier label is shown when available; other days are grouped by the forecast amount using 0.1, 10, and 25 mm thresholds, without class probability scores.
+The Machine Learning date filter selects forecast target dates. New forecasts are limited to the next seven days; past dates show saved outlooks and archived next-day results. A published result takes precedence over a preview. A saved next-day classifier label is shown when available; other days are grouped by the forecast amount using 0.1, 10, and 25 mm thresholds, without class probability scores.
 
 ## Clustering
 

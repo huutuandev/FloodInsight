@@ -135,13 +135,27 @@ bind_ml("predictions", "prediction", "prediction", "ml_rainfall_prediction", For
 
 
 @router.get("/predictions/outlook", tags=["predictions"], response_model=Success[JsonValue])
-async def prediction_outlook(request: Request, location: str = Query(min_length=1, max_length=100)):
-    data = await forward(request, "prediction", "/prediction/outlook", query={"location": location})
+async def prediction_outlook(request: Request, location: str = Query(min_length=1, max_length=100),
+                             start_date: date | None = None, end_date: date | None = None):
+    query = {"location": location}
+    if start_date is not None:
+        query["start_date"] = start_date.isoformat()
+    if end_date is not None:
+        query["end_date"] = end_date.isoformat()
+    data = await forward(request, "prediction", "/prediction/outlook", query=query)
     return envelope(request, data, "ml_rainfall_outlook")
 
 
 class OutlookPublication(BaseModel):
     location: str = Field(min_length=1, max_length=100)
+    start_date: date | None = None
+    end_date: date | None = None
+
+
+@router.post("/predictions/outlook/train", tags=["predictions"], response_model=Success[JsonValue])
+async def train_outlook(request: Request, payload: ForecastTrain):
+    data = await forward(request, "prediction", "/prediction/outlook/train", body=payload, method="POST")
+    return envelope(request, data, "ml_rainfall_outlook_model")
 
 
 @router.get("/predictions/outlook/verification", tags=["predictions"], response_model=Success[JsonValue])

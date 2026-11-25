@@ -22,6 +22,8 @@ These points represent sampling locations. They do not represent administrative 
 
 The recent-rainfall table shows the two provider estimates, with today limited to intervals that have ended. It sums hourly total precipitation in millimeters by the interval start in Vietnam time and shows hours available. The seven-day outlook is computed by FloodInsight's own regressors from archived ERA5; see [machine-learning.md](machine-learning.md). Before each scheduled refresh, Compose also asks the warehouse to download and load the newest ERA5 input day required by that outlook.
 
+Before each scheduled refresh, the task checks the latest ERA5 date in all nine locations and backfills any gap through the latest date accepted by the historical API (five UTC days behind today). It then runs ETL for that same range. This fills missing dates in order instead of repeatedly requesting only one fixed lag day.
+
 The [Vietnam National Center for Hydrometeorological Forecasting bulletin for Hải Châu](https://nchmf.gov.vn/kttvsiteE/vi-VN/1/hai-chau-tp-da-nang-w55.html) is available for external reference.
 
 ### Nearby rain-gauge reference for Hải Châu

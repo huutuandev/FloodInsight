@@ -7,7 +7,8 @@ const reads = new Set([
   "predictions/metrics", "predictions/outlook", "predictions/outlook/history", "predictions/outlook/verification", "classifications/results", "classifications/metrics",
   "weather/ingestion/history", "weather/etl/status", "weather/quality", "system/status",
 ]);
-const writes = new Set(["analytics/generate", "weather/ingestion/run", "predictions/outlook/publish"]);
+const writes = new Set(["analytics/generate", "weather/ingestion/run",
+  "predictions/outlook/train", "predictions/outlook/publish"]);
 
 type Context = { params: Promise<{ path: string[] }> };
 

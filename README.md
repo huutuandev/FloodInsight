@@ -14,7 +14,7 @@ docker compose ps -a
 
 Mở [dashboard](http://localhost:3000), [trạng thái API](http://localhost:8000/health) hoặc [Swagger UI](http://localhost:8000/docs). Các cổng dưới đây là giá trị mặc định trên máy local. Có thể đổi bằng biến môi trường trong Compose.
 
-Khi khởi động lần đầu, `warehouse-migrate` tạo hoặc nâng cấp lược đồ rồi kết thúc. Để có kết quả dự báo trên một kho mới, cần nhập lịch sử ERA5, chạy ETL và huấn luyện mô hình cho điểm cần xem. Hãy kiểm tra phạm vi ngày có dữ liệu trước khi chọn khoảng huấn luyện. Mô hình bảy ngày dùng endpoint riêng `POST /prediction/outlook/train` trên cổng 8005. [Nhập lịch sử và chạy ETL](docs/historical-etl.md) · [Huấn luyện và quản lý mô hình](docs/machine-learning.md)
+Khi khởi động lần đầu, `warehouse-migrate` tạo hoặc nâng cấp lược đồ rồi kết thúc. Để có dự báo trên kho mới, hãy nhập lịch sử ERA5 và chạy ETL. Trong dashboard, nút **Huấn luyện mô hình 7 ngày** tạo bảy mô hình theo hạn cho điểm đang chọn; sau đó người dùng có thể xem trước và phát hành các ngày đã chọn. Dự báo mới hỗ trợ tối đa bảy ngày tới. Tác vụ `forecast-refresh` tiếp tục bổ sung ERA5 tới ngày mới nhất mà API lịch sử chấp nhận. [Nhập lịch sử và chạy ETL](docs/historical-etl.md) · [Huấn luyện và quản lý mô hình](docs/machine-learning.md)
 
 Trong **Bản đồ Đà Nẵng**, bảng **Theo dõi địa điểm qua các đợt ngập** so sánh các đợt có tư liệu cho khu vực đang chọn. Mỗi hàng dùng mã cố định từ `flood_monitoring_sites`. Khi nhập báo cáo mới cho cùng một địa điểm, dùng lại mã ở `flood_reports.site_code` để nối lịch sử dù cách viết tên đường thay đổi. Giao lộ và cả đoạn đường là hai phạm vi khảo sát riêng. Bảng giữ nguồn, số đo độ sâu và từng ghi nhận của mỗi đợt.
 
@@ -23,7 +23,7 @@ Trong **Bản đồ Đà Nẵng**, bảng **Theo dõi địa điểm qua các đ
 | Mục | Có thể làm gì |
 | --- | --- |
 | Tổng quan đô thị | Xem thời tiết, lượng mưa gần đây và tình trạng hệ thống. Nút **Xem dự báo mưa 7 ngày** mở dự báo từ ngày mai theo giờ Việt Nam. |
-| Dự báo mưa & mô hình | Chọn Hải Châu và **7 ngày tới**, hoặc tự chọn khoảng ngày rồi áp dụng bộ lọc. Mỗi dòng tương ứng một ngày mục tiêu. Xem lượng mưa (mm), mức mưa, thời điểm phát hành và các kết quả đánh giá. |
+| Dự báo mưa & mô hình | Huấn luyện mô hình 7 hạn, chọn tối đa 7 ngày tới để xem trước/phát hành, hoặc chọn ngày để tra các bản phát hành trước. Mỗi dòng tương ứng một ngày mục tiêu. |
 | Phân tích lượng mưa | Xem chuỗi thời gian, thống kê mô tả và tương quan giữa các biến thời tiết trong khoảng đã chọn. |
 | Bản đồ Đà Nẵng | Xem vị trí các điểm lấy mẫu, lượng mưa theo ngày và lớp phủ radar. |
 | Quản trị kho dữ liệu | Kiểm tra lịch sử nhập dữ liệu, trạng thái ETL, khoảng bao phủ và các mốc bị thiếu. |
