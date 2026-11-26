@@ -1,0 +1,10 @@
+search-path = [
+  "FloodInsight/services/ml-common",
+  "FloodInsight/services/prediction-service",
+  "FloodInsight/services/classification-service",
+  "FloodInsight/services/clustering-service",
+  "FloodInsight/services/analysis-service",
+  "FloodInsight/services/ingestion-service",
+  "FloodInsight/services/warehouse-service",
+  "FloodInsight/services/api-service"
+]

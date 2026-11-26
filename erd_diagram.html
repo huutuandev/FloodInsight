@@ -1,0 +1,2007 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>FloodInsight ERD - Compact Architecture</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0;
+    background: #0B1120;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+    color: #F8FAFC;
+    overflow: auto;
+  }
+  .erd-canvas {
+    position: relative;
+    width: 2650px;
+    height: 1680px;
+    background-image: 
+      radial-gradient(#1E293B 1.2px, transparent 1.2px),
+      radial-gradient(#1E293B 1.2px, #0B1120 1.2px);
+    background-size: 24px 24px;
+    background-position: 0 0, 12px 12px;
+  }
+  .banner {
+    position: absolute;
+    top: 18px;
+    left: 60px;
+    background: rgba(15, 23, 42, 0.95);
+    border: 1.5px solid #3B82F6;
+    border-radius: 10px;
+    padding: 12px 24px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+    z-index: 100;
+  }
+  .banner-title {
+    font-size: 19px;
+    font-weight: 800;
+    color: #60A5FA;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .banner-subtitle {
+    font-size: 12px;
+    color: #94A3B8;
+    margin-top: 3px;
+  }
+  .legend {
+    display: flex;
+    gap: 14px;
+    margin-top: 8px;
+    font-size: 11px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .legend-box {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+  }
+  .svg-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .table-node {
+    position: absolute;
+    background: #111827;
+    border: 1.5px solid #374151;
+    border-radius: 7px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+    z-index: 20;
+    overflow: hidden;
+  }
+  .table-header {
+    padding: 6px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255,255,255,0.12);
+  }
+  .table-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #FFFFFF;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .table-badge {
+    font-size: 8.5px;
+    font-weight: 700;
+    color: #FFFFFF;
+    padding: 1.5px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.5px;
+  }
+  .table-cols {
+    padding: 2px 0;
+  }
+  .col-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 8px;
+    font-size: 10.5px;
+    height: 24px;
+    border-bottom: 1px solid #1F2937;
+  }
+  .col-row:last-child {
+    border-bottom: none;
+  }
+  .col-left {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    overflow: hidden;
+  }
+  .col-name {
+    color: #E2E8F0;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pk-name {
+    color: #FBBF24;
+    font-weight: 700;
+  }
+  .col-type {
+    color: #64748B;
+    font-size: 9.5px;
+    font-family: Consolas, monospace;
+    white-space: nowrap;
+    margin-left: 6px;
+  }
+  .badge {
+    display: inline-block;
+    padding: 1px 3.5px;
+    border-radius: 2.5px;
+    font-size: 8px;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .badge.pk { background: #D97706; color: #000000; }
+  .badge.fk { background: #0284C7; color: #FFFFFF; }
+  .badge.pk-fk { background: #9333EA; color: #FFFFFF; }
+  .badge.plain { color: #475569; }
+</style>
+</head>
+<body>
+<div class="erd-canvas">
+  <div class="banner">
+    <div class="banner-title">FloodInsight — Sơ đồ thực thể quan hệ (ERD)</div>
+    <div class="banner-subtitle">Bố cục tối ưu gọn gàng theo cụm chức năng · 34 Bảng · 52 Quan hệ (PK/FK) · Chiều cao thu gọn 1.680px</div>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-box" style="background:#1E3A8A;"></div><span>Dimension</span></div>
+      <div class="legend-item"><div class="legend-box" style="background:#065F46;"></div><span>Fact Table</span></div>
+      <div class="legend-item"><div class="legend-box" style="background:#7C2D12;"></div><span>Ingestion/Raw</span></div>
+      <div class="legend-item"><div class="legend-box" style="background:#581C87;"></div><span>AI/ML Model</span></div>
+      <div class="legend-item"><div class="legend-box" style="background:#0F766E;"></div><span>Flood/GIS</span></div>
+      <div class="legend-item"><div class="legend-box" style="background:#374151;"></div><span>Legacy</span></div>
+      <div class="legend-item" style="margin-left: 15px;"><span style="color:#38BDF8; font-weight:bold;">||—||</span> 1-1 (One-to-One)</div>
+      <div class="legend-item"><span style="color:#CBD5E1; font-weight:bold;">|──&lt;</span> 1-N (One-to-Many)</div>
+    </div>
+  </div>
+
+  <svg class="svg-layer">
+    <defs>
+      <!-- One End Marker (Perpendicular tick) -->
+      <marker id="one-start" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+        <line x1="2" y1="1" x2="2" y2="9" stroke="#38BDF8" stroke-width="2.5" />
+      </marker>
+      <marker id="one-end" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+        <line x1="8" y1="1" x2="8" y2="9" stroke="#38BDF8" stroke-width="2.5" />
+      </marker>
+      <!-- Crow Foot End Marker (Many) -->
+      <marker id="crow-end" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto">
+        <path d="M 1 6 L 10 1 M 1 6 L 10 11 M 1 6 L 11 6" stroke="#CBD5E1" stroke-width="1.8" fill="none" />
+      </marker>
+    </defs>
+    
+    <path d="M 330 162.0 C 380 162.0, 380 406.0, 330 406.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 162.0 C 1000 162.0, 1000 316.0, 950 316.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 330 162.0 C 380 162.0, 380 586.0, 330 586.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 330 562.0 C 380 562.0, 380 954.0, 330 954.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 330 562.0 C 380 562.0, 380 1250.0, 330 1250.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 330 562.0 C 355 562.0, 345 186.0, 370 186.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 330 906.0 C 355 906.0, 345 162.0, 370 162.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 330 162.0 C 355 162.0, 345 686.0, 370 686.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 330 562.0 C 355 562.0, 345 782.0, 370 782.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 640 342.0 C 690 342.0, 690 806.0, 640 806.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 640 342.0 C 690 342.0, 690 830.0, 640 830.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 472.0 C 1000 472.0, 1000 726.0, 950 726.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 330 382.0 C 390 382.0, 620 750.0, 680 750.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 292.0 C 1000 292.0, 1000 702.0, 950 702.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 472.0 C 1000 472.0, 1000 1030.0, 950 1030.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 330 382.0 C 390 382.0, 620 1054.0, 680 1054.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 292.0 C 1000 292.0, 1000 1006.0, 950 1006.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 472.0 C 1000 472.0, 1000 1404.0, 950 1404.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 330 382.0 C 390 382.0, 620 1428.0, 680 1428.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 162.0 C 1000 162.0, 1000 1332.0, 950 1332.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 472.0 C 975 472.0, 965 562.0, 990 562.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 330 382.0 C 390 382.0, 930 586.0, 990 586.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 472.0 C 975 472.0, 965 886.0, 990 886.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 330 382.0 C 390 382.0, 930 910.0, 990 910.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 1260 162.0 C 1310 162.0, 1310 742.0, 1260 742.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 292.0 C 975 292.0, 965 814.0, 990 814.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 472.0 C 975 472.0, 965 1240.0, 990 1240.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 330 382.0 C 390 382.0, 930 1264.0, 990 1264.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 1260 162.0 C 1310 162.0, 1310 1072.0, 1260 1072.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 292.0 C 975 292.0, 965 1168.0, 990 1168.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 472.0 C 1010 472.0, 1240 306.0, 1300 306.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 330 382.0 C 390 382.0, 1240 330.0, 1300 330.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 1260 162.0 C 1285 162.0, 1275 162.0, 1300 162.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 330 162.0 C 390 162.0, 1550 186.0, 1610 186.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 1880 162.0 C 1930 162.0, 1930 486.0, 1880 486.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 1880 162.0 C 1930 162.0, 1930 810.0, 1880 810.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 1880 462.0 C 1930 462.0, 1930 786.0, 1880 786.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 472.0 C 1010 472.0, 1550 834.0, 1610 834.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 1880 162.0 C 1930 162.0, 1930 1326.0, 1880 1326.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 472.0 C 1010 472.0, 1550 1350.0, 1610 1350.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 1880 162.0 C 1905 162.0, 1895 186.0, 1920 186.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 472.0 C 1010 472.0, 1860 210.0, 1920 210.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 472.0 C 1010 472.0, 1860 486.0, 1920 486.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 472.0 C 1010 472.0, 1240 716.0, 1300 716.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 1570 512.0 C 1620 512.0, 1620 740.0, 1570 740.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 330 162.0 C 390 162.0, 1240 1110.0, 1300 1110.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 472.0 C 1010 472.0, 1240 1086.0, 1300 1086.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 950 162.0 C 1010 162.0, 1240 1134.0, 1300 1134.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 330 162.0 C 390 162.0, 2170 828.0, 2230 828.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 2500 162.0 C 2550 162.0, 2550 396.0, 2500 396.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 1570 512.0 C 1630 512.0, 2170 708.0, 2230 708.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+    <path d="M 2500 372.0 C 2550 372.0, 2550 962.0, 2500 962.0" fill="none" stroke="#94A3B8" stroke-width="1.6" 
+          marker-start="url(#one-start)" marker-end="url(#crow-end)" opacity="0.85"/>
+    
+  </svg>
+
+  
+    <div class="table-node" style="left: 370px; top: 920px; width: 270px; border-color: #64748B;">
+      <div class="table-header" style="background: linear-gradient(135deg, #1E293B, #334155);">
+        <div class="table-title">alembic_version</div>
+        <div class="table-badge" style="background: #334155">SYSTEM</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">version_num</span></div>
+          <div class="col-type">character varying(32)</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 990px; top: 380px; width: 270px; border-color: #A855F7;">
+      <div class="table-header" style="background: linear-gradient(135deg, #581C87, #9333EA);">
+        <div class="table-title">analysis_results</div>
+        <div class="table-badge" style="background: #7E22CE">ML/AI</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">analysis_key</span></div>
+          <div class="col-type">character varying(200)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">result</span></div>
+          <div class="col-type">jsonb</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">window_start_utc</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">window_end_utc</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">location_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">weather_source_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">created_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 990px; top: 1010px; width: 270px; border-color: #A855F7;">
+      <div class="table-header" style="background: linear-gradient(135deg, #581C87, #9333EA);">
+        <div class="table-title">classification_results</div>
+        <div class="table-badge" style="background: #7E22CE">ML/AI</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">model_version_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">model_kind</span></div>
+          <div class="col-type">character varying(16)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">label</span></div>
+          <div class="col-type">character varying(100)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">confidence</span></div>
+          <div class="col-type">numeric(7,6)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">target_hour_utc</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">issued_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">location_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">weather_source_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">created_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">probabilities</span></div>
+          <div class="col-type">jsonb</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 1300px; top: 100px; width: 270px; border-color: #A855F7;">
+      <div class="table-header" style="background: linear-gradient(135deg, #581C87, #9333EA);">
+        <div class="table-title">clustering_results</div>
+        <div class="table-badge" style="background: #7E22CE">ML/AI</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">model_version_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">model_kind</span></div>
+          <div class="col-type">character varying(16)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">cluster_label</span></div>
+          <div class="col-type">integer</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">window_start_utc</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">window_end_utc</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">location_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">weather_source_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">created_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">details</span></div>
+          <div class="col-type">jsonb</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 60px; top: 100px; width: 270px; border-color: #3B82F6;">
+      <div class="table-header" style="background: linear-gradient(135deg, #1E3A8A, #2563EB);">
+        <div class="table-title">data_sources</div>
+        <div class="table-badge" style="background: #1D4ED8">DIMENSION</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">code</span></div>
+          <div class="col-type">character varying(100)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">provider</span></div>
+          <div class="col-type">character varying(200)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">dataset</span></div>
+          <div class="col-type">character varying(200)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">reference_url</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 680px; top: 100px; width: 270px; border-color: #3B82F6;">
+      <div class="table-header" style="background: linear-gradient(135deg, #1E3A8A, #2563EB);">
+        <div class="table-title">dim_date</div>
+        <div class="table-badge" style="background: #1D4ED8">DIMENSION</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">local_date</span></div>
+          <div class="col-type">date</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 680px; top: 410px; width: 270px; border-color: #3B82F6;">
+      <div class="table-header" style="background: linear-gradient(135deg, #1E3A8A, #2563EB);">
+        <div class="table-title">dim_location</div>
+        <div class="table-badge" style="background: #1D4ED8">DIMENSION</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">code</span></div>
+          <div class="col-type">character varying(100)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">name</span></div>
+          <div class="col-type">character varying(200)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">latitude</span></div>
+          <div class="col-type">numeric(9,6)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">longitude</span></div>
+          <div class="col-type">numeric(9,6)</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 680px; top: 230px; width: 270px; border-color: #3B82F6;">
+      <div class="table-header" style="background: linear-gradient(135deg, #1E3A8A, #2563EB);">
+        <div class="table-title">dim_time</div>
+        <div class="table-badge" style="background: #1D4ED8">DIMENSION</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">hour_start_utc</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">local_date</span></div>
+          <div class="col-type">date</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">local_hour</span></div>
+          <div class="col-type">smallint</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 60px; top: 320px; width: 270px; border-color: #3B82F6;">
+      <div class="table-header" style="background: linear-gradient(135deg, #1E3A8A, #2563EB);">
+        <div class="table-title">dim_weather_source</div>
+        <div class="table-badge" style="background: #1D4ED8">DIMENSION</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">data_source_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">name</span></div>
+          <div class="col-type">character varying(200)</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 680px; top: 1270px; width: 270px; border-color: #10B981;">
+      <div class="table-header" style="background: linear-gradient(135deg, #065F46, #059669);">
+        <div class="table-title">fact_rainfall_daily</div>
+        <div class="table-badge" style="background: #047857">FACT</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk-fk">PK/FK</span><span class="col-name pk-name">local_date</span></div>
+          <div class="col-type">date</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">rainfall_total_mm</span></div>
+          <div class="col-type">numeric(14,3)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">hours_with_rainfall</span></div>
+          <div class="col-type">smallint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk-fk">PK/FK</span><span class="col-name pk-name">location_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk-fk">PK/FK</span><span class="col-name pk-name">weather_source_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 680px; top: 920px; width: 270px; border-color: #10B981;">
+      <div class="table-header" style="background: linear-gradient(135deg, #065F46, #059669);">
+        <div class="table-title">fact_weather_forecast_hourly</div>
+        <div class="table-badge" style="background: #047857">FACT</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">issued_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">hour_start_utc</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">location_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">weather_source_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">rainfall_mm</span></div>
+          <div class="col-type">numeric(12,3)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">air_temperature_c</span></div>
+          <div class="col-type">numeric(6,2)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">relative_humidity_pct</span></div>
+          <div class="col-type">numeric(5,2)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">wind_speed_mps</span></div>
+          <div class="col-type">numeric(8,3)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">snapshot_received_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 680px; top: 640px; width: 270px; border-color: #10B981;">
+      <div class="table-header" style="background: linear-gradient(135deg, #065F46, #059669);">
+        <div class="table-title">fact_weather_hourly</div>
+        <div class="table-badge" style="background: #047857">FACT</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk-fk">PK/FK</span><span class="col-name pk-name">hour_start_utc</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk-fk">PK/FK</span><span class="col-name pk-name">location_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk-fk">PK/FK</span><span class="col-name pk-name">weather_source_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">rainfall_mm</span></div>
+          <div class="col-type">numeric(12,3)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">air_temperature_c</span></div>
+          <div class="col-type">numeric(6,2)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">relative_humidity_pct</span></div>
+          <div class="col-type">numeric(5,2)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">wind_speed_mps</span></div>
+          <div class="col-type">numeric(8,3)</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 1610px; top: 100px; width: 270px; border-color: #14B8A6;">
+      <div class="table-header" style="background: linear-gradient(135deg, #0F766E, #0D9488);">
+        <div class="table-title">flood_dataset_assets</div>
+        <div class="table-badge" style="background: #0F766E">FLOOD GIS</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">source_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">source_ref</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">sha256</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">retrieved_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">licence</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">attribution</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">metadata</span></div>
+          <div class="col-type">jsonb</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 1610px; top: 400px; width: 270px; border-color: #14B8A6;">
+      <div class="table-header" style="background: linear-gradient(135deg, #0F766E, #0D9488);">
+        <div class="table-title">flood_events</div>
+        <div class="table-badge" style="background: #0F766E">FLOOD GIS</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">asset_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">event_key</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">name</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">started_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">ended_before</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">locality_as_reported</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">boundary_vintage</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 1610px; top: 1240px; width: 270px; border-color: #14B8A6;">
+      <div class="table-header" style="background: linear-gradient(135deg, #0F766E, #0D9488);">
+        <div class="table-title">flood_hydrology_observations</div>
+        <div class="table-badge" style="background: #0F766E">FLOOD GIS</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">asset_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">location_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">station_key</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">variable</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">valid_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">value</span></div>
+          <div class="col-type">double precision</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">unit</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">latitude</span></div>
+          <div class="col-type">double precision</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">longitude</span></div>
+          <div class="col-type">double precision</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">grid_latitude</span></div>
+          <div class="col-type">double precision</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">grid_longitude</span></div>
+          <div class="col-type">double precision</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">sample_sha256</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 1300px; top: 450px; width: 270px; border-color: #3B82F6;">
+      <div class="table-header" style="background: linear-gradient(135deg, #1E3A8A, #2563EB);">
+        <div class="table-title">flood_monitoring_sites</div>
+        <div class="table-badge" style="background: #1D4ED8">DIMENSION</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">code</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">location</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">name</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 1610px; top: 700px; width: 270px; border-color: #14B8A6;">
+      <div class="table-header" style="background: linear-gradient(135deg, #0F766E, #0D9488);">
+        <div class="table-title">flood_observations</div>
+        <div class="table-badge" style="background: #0F766E">FLOOD GIS</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">event_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">asset_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">location_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">observation_key</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">observed_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">locality_as_reported</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">boundary_vintage</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">latitude</span></div>
+          <div class="col-type">double precision</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">longitude</span></div>
+          <div class="col-type">double precision</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">spatial_uncertainty_m</span></div>
+          <div class="col-type">double precision</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">label</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">quality</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">evidence_ref</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">coverage_evidence</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">coverage_start</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">coverage_end</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">coverage_radius_m</span></div>
+          <div class="col-type">double precision</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 2230px; top: 900px; width: 270px; border-color: #14B8A6;">
+      <div class="table-header" style="background: linear-gradient(135deg, #0F766E, #0D9488);">
+        <div class="table-title">flood_report_sources</div>
+        <div class="table-badge" style="background: #0F766E">FLOOD GIS</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk-fk">PK/FK</span><span class="col-name pk-name">report_id</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">publisher</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">url</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 1920px; top: 400px; width: 270px; border-color: #14B8A6;">
+      <div class="table-header" style="background: linear-gradient(135deg, #0F766E, #0D9488);">
+        <div class="table-title">flood_risk_assessments</div>
+        <div class="table-badge" style="background: #0F766E">FLOOD GIS</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">location_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">issued_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">method_version</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">feature_version</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">horizon_hours</span></div>
+          <div class="col-type">smallint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">evidence_sha256</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">risk_index</span></div>
+          <div class="col-type">numeric(9,6)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">risk_category</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">flood_probability</span></div>
+          <div class="col-type">numeric</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">result</span></div>
+          <div class="col-type">jsonb</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">configuration</span></div>
+          <div class="col-type">jsonb</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">created_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 1920px; top: 100px; width: 270px; border-color: #14B8A6;">
+      <div class="table-header" style="background: linear-gradient(135deg, #0F766E, #0D9488);">
+        <div class="table-title">flood_terrain_features</div>
+        <div class="table-badge" style="background: #0F766E">FLOOD GIS</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">asset_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">location_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">feature</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">value</span></div>
+          <div class="col-type">double precision</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">unit</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">latitude</span></div>
+          <div class="col-type">double precision</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">longitude</span></div>
+          <div class="col-type">double precision</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 370px; top: 100px; width: 270px; border-color: #F97316;">
+      <div class="table-header" style="background: linear-gradient(135deg, #7C2D12, #EA580C);">
+        <div class="table-title">forecast_snapshot_receipts</div>
+        <div class="table-badge" style="background: #C2410C">INGESTION</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk-fk">PK/FK</span><span class="col-name pk-name">snapshot_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk-fk">PK/FK</span><span class="col-name pk-name">run_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">received_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 370px; top: 1050px; width: 270px; border-color: #64748B;">
+      <div class="table-header" style="background: linear-gradient(135deg, #1E293B, #334155);">
+        <div class="table-title">gauge_daily_observations</div>
+        <div class="table-badge" style="background: #334155">SYSTEM</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">station_code</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">local_date</span></div>
+          <div class="col-type">date</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">rainfall_mm</span></div>
+          <div class="col-type">numeric</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">intervals</span></div>
+          <div class="col-type">integer</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">observed_through</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 370px; top: 600px; width: 270px; border-color: #F97316;">
+      <div class="table-header" style="background: linear-gradient(135deg, #7C2D12, #EA580C);">
+        <div class="table-title">historical_batches</div>
+        <div class="table-badge" style="background: #C2410C">INGESTION</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">source_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">location_code</span></div>
+          <div class="col-type">character varying(100)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">start_date</span></div>
+          <div class="col-type">date</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">end_date</span></div>
+          <div class="col-type">date</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">ingestion_run_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">backfill_run_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">etl_run_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">quality</span></div>
+          <div class="col-type">jsonb</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 1300px; top: 1000px; width: 270px; border-color: #64748B;">
+      <div class="table-header" style="background: linear-gradient(135deg, #1E293B, #334155);">
+        <div class="table-title">hydrological_observations</div>
+        <div class="table-badge" style="background: #334155">SYSTEM</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">location_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">data_source_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">observed_date</span></div>
+          <div class="col-type">date</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">soil_moisture_0_to_7cm_m3m3</span></div>
+          <div class="col-type">numeric(6,4)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">soil_moisture_7_to_28cm_m3m3</span></div>
+          <div class="col-type">numeric(6,4)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">river_discharge_m3s</span></div>
+          <div class="col-type">numeric(10,3)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">upstream_basin_discharge_m3s</span></div>
+          <div class="col-type">numeric(10,3)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">marine_wave_height_m</span></div>
+          <div class="col-type">numeric(6,3)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">tide_level_m</span></div>
+          <div class="col-type">numeric(6,3)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">payload</span></div>
+          <div class="col-type">jsonb</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">received_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 60px; top: 500px; width: 270px; border-color: #F97316;">
+      <div class="table-header" style="background: linear-gradient(135deg, #7C2D12, #EA580C);">
+        <div class="table-title">ingestion_runs</div>
+        <div class="table-badge" style="background: #C2410C">INGESTION</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">source_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">run_key</span></div>
+          <div class="col-type">character varying(200)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">status</span></div>
+          <div class="col-type">character varying(16)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">started_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">finished_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">trigger</span></div>
+          <div class="col-type">character varying(16)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">records_inserted</span></div>
+          <div class="col-type">integer</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">error_message</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 2230px; top: 100px; width: 270px; border-color: #6B7280;">
+      <div class="table-header" style="background: linear-gradient(135deg, #374151, #4B5563);">
+        <div class="table-title">legacy_flood_events</div>
+        <div class="table-badge" style="background: #4B5563">LEGACY</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">location</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">event_date</span></div>
+          <div class="col-type">date</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">title</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 2230px; top: 310px; width: 270px; border-color: #6B7280;">
+      <div class="table-header" style="background: linear-gradient(135deg, #374151, #4B5563);">
+        <div class="table-title">legacy_flood_reports</div>
+        <div class="table-badge" style="background: #4B5563">LEGACY</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">event_id</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">place</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">precision_level</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">status</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">depth_cm</span></div>
+          <div class="col-type">numeric</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">latitude</span></div>
+          <div class="col-type">double precision</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">longitude</span></div>
+          <div class="col-type">double precision</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">geometry_source</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">site_location</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">road_geometry</span></div>
+          <div class="col-type">jsonb</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">context_note</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">elevation_m</span></div>
+          <div class="col-type">numeric</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">elevation_source</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">site_code</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">label_quality</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">spatial_uncertainty_m</span></div>
+          <div class="col-type">numeric(8,2)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">observation_time_start</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">observation_time_end</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">data_source_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 990px; top: 100px; width: 270px; border-color: #3B82F6;">
+      <div class="table-header" style="background: linear-gradient(135deg, #1E3A8A, #2563EB);">
+        <div class="table-title">model_versions</div>
+        <div class="table-badge" style="background: #1D4ED8">DIMENSION</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">kind</span></div>
+          <div class="col-type">character varying(16)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">model_name</span></div>
+          <div class="col-type">character varying(100)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">version</span></div>
+          <div class="col-type">character varying(80)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">artifact_uri</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">created_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">training_metadata</span></div>
+          <div class="col-type">jsonb</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 990px; top: 680px; width: 270px; border-color: #A855F7;">
+      <div class="table-header" style="background: linear-gradient(135deg, #581C87, #9333EA);">
+        <div class="table-title">prediction_results</div>
+        <div class="table-badge" style="background: #7E22CE">ML/AI</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">model_version_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">model_kind</span></div>
+          <div class="col-type">character varying(16)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">rainfall_mm</span></div>
+          <div class="col-type">numeric(12,3)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">target_hour_utc</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">issued_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">location_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">weather_source_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">created_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 60px; top: 820px; width: 270px; border-color: #F97316;">
+      <div class="table-header" style="background: linear-gradient(135deg, #7C2D12, #EA580C);">
+        <div class="table-title">raw_weather_forecasts</div>
+        <div class="table-badge" style="background: #C2410C">INGESTION</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">issued_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">source_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">ingestion_run_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">source_location_key</span></div>
+          <div class="col-type">character varying(200)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">valid_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">payload</span></div>
+          <div class="col-type">jsonb</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">received_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">snapshot_hash</span></div>
+          <div class="col-type">character varying(64)</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 60px; top: 1140px; width: 270px; border-color: #F97316;">
+      <div class="table-header" style="background: linear-gradient(135deg, #7C2D12, #EA580C);">
+        <div class="table-title">raw_weather_observations</div>
+        <div class="table-badge" style="background: #C2410C">INGESTION</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">source_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">ingestion_run_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">source_location_key</span></div>
+          <div class="col-type">character varying(200)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">valid_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">payload</span></div>
+          <div class="col-type">jsonb</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">received_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 1920px; top: 820px; width: 270px; border-color: #64748B;">
+      <div class="table-header" style="background: linear-gradient(135deg, #1E293B, #334155);">
+        <div class="table-title">river_observations</div>
+        <div class="table-badge" style="background: #334155">SYSTEM</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">station_or_site</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">observed_date</span></div>
+          <div class="col-type">date</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">time_description</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">level_m</span></div>
+          <div class="col-type">numeric</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">reference_level</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">source_url</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 1300px; top: 630px; width: 270px; border-color: #14B8A6;">
+      <div class="table-header" style="background: linear-gradient(135deg, #0F766E, #0D9488);">
+        <div class="table-title">terrain_features</div>
+        <div class="table-badge" style="background: #0F766E">FLOOD GIS</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">location_id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge fk">FK</span><span class="col-name ">site_code</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">elevation_m</span></div>
+          <div class="col-type">numeric(7,2)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">slope_degrees</span></div>
+          <div class="col-type">numeric(5,2)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">distance_to_river_m</span></div>
+          <div class="col-type">numeric(10,2)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">distance_to_coast_m</span></div>
+          <div class="col-type">numeric(10,2)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">impervious_surface_pct</span></div>
+          <div class="col-type">numeric(5,2)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">flow_accumulation_proxy</span></div>
+          <div class="col-type">numeric(12,2)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">elevation_source</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">computed_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+      </div>
+    </div>
+    
+    <div class="table-node" style="left: 370px; top: 280px; width: 270px; border-color: #F97316;">
+      <div class="table-header" style="background: linear-gradient(135deg, #7C2D12, #EA580C);">
+        <div class="table-title">warehouse_runs</div>
+        <div class="table-badge" style="background: #C2410C">INGESTION</div>
+      </div>
+      <div class="table-cols">
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge pk">PK</span><span class="col-name pk-name">id</span></div>
+          <div class="col-type">bigint</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">operation</span></div>
+          <div class="col-type">character varying(16)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">start_date</span></div>
+          <div class="col-type">date</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">end_date</span></div>
+          <div class="col-type">date</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">status</span></div>
+          <div class="col-type">character varying(16)</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">started_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">finished_at</span></div>
+          <div class="col-type">timestamp with time zone</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">progress</span></div>
+          <div class="col-type">jsonb</div>
+        </div>
+        
+        <div class="col-row">
+          <div class="col-left"><span class="badge plain">·</span><span class="col-name ">error_message</span></div>
+          <div class="col-type">text</div>
+        </div>
+        
+      </div>
+    </div>
+    
+</div>
+</body>
+</html>
