@@ -10,7 +10,7 @@ import statistics
 from sqlalchemy import create_engine, text
 
 from floodinsight_ml.availability import ERA5_DELAY
-from floodinsight_ml.flood_features import HOUR, RADIUS_M, SCHEMA, TARGET, VERSION, WET_MM, make_row
+from floodinsight_ml.flood_features import HOUR, RADIUS_M, SCHEMA, VERSION, WET_MM, make_row
 
 from floodinsight_ml.flood_store import QUERIES, read as read_features
 

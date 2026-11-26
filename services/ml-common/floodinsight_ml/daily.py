@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from pydantic import AwareDatetime, BaseModel
 
-from .availability import ERA5_DELAY as DELAY, archive_available_at
+from .availability import archive_available_at
 from .schemas import Location, Version, Window
 from .storage import DataUnavailable, SOURCE, connect
 

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from unittest import TestCase
 
 from floodinsight_ml.availability import ERA5_DELAY
