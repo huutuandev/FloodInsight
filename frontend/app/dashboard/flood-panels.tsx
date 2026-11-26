@@ -260,8 +260,16 @@ export function FloodForecast({ selected, select }: { selected: string; select: 
   const risks = useData<PointRisk[]>("flood-risk/latest", undefined, true, 60_000);
   const predictions = useCurrentPredictions();
   const generate = useMutation({
-    mutationFn: () => request<Assessment[]>("flood-risk/generate", undefined, undefined, {}),
-    onSuccess: () => { void client.invalidateQueries({ predicate: ({ queryKey }) => String(queryKey[0]).startsWith("flood-risk/") }); },
+    mutationFn: async () => {
+      try { await request("weather/ingestion/run", undefined, undefined, {}); } catch { /* fallback to latest stored forecasts if upstream is unreachable */ }
+      return await request<Assessment[]>("flood-risk/generate", undefined, undefined, {});
+    },
+    onSuccess: () => {
+      void client.invalidateQueries({ predicate: ({ queryKey }) => {
+        const key = String(queryKey[0]);
+        return key.startsWith("flood-risk/") || key.startsWith("weather/");
+      } });
+    },
   });
   const rows = useMemo(() => (risks.data ?? []).map((row) => {
     const assessment = activeAssessment(row);
@@ -344,10 +352,22 @@ export function FloodMap({ selected, select }: { selected: string; select: (code
           return {...road, rain, screening};
         }).sort((a,b) => (a.locationCode === (focused || selected) ? -1 : 0) - (b.locationCode === (focused || selected) ? -1 : 0) || b.screening.rank - a.screening.rank);
 
-        const mapRoads = roads.filter(r => (r.routeType === "safer_corridor" ? showSafeRoads : showFloodRoads));
+        const activeFloodedLocations = new Set(
+          roads.filter(r => r.routeType === "flood_prone" && r.screening.rank >= 2).map(r => r.locationCode)
+        );
+        // Chỉ hiển thị tuyến đường trên bản đồ khi thực sự có nguy cơ ngập (rank >= 2).
+        // Tuyến né ngập (xanh lá) chỉ hiện kèm khi khu vực đó đang có ít nhất 1 đoạn đường bị ngập.
+        const mapRoads = roads.filter(r => {
+          if (r.routeType === "safer_corridor") {
+            return showSafeRoads && activeFloodedLocations.has(r.locationCode);
+          }
+          return showFloodRoads && r.screening.rank >= 2;
+        });
         const visibleRoads = focused ? roads.filter(r => r.locationCode === focused) : roads;
         const floodRiskRoads = visibleRoads.filter(r => r.routeType === "flood_prone" && r.screening.rank >= 2);
-        const saferAndLowRoads = visibleRoads.filter(r => r.routeType === "safer_corridor" || r.screening.rank <= 1);
+        const saferAndLowRoads = visibleRoads.filter(r =>
+          activeFloodedLocations.has(r.locationCode) && (r.routeType === "safer_corridor" || r.screening.rank <= 1)
+        );
 
         const formatFloodWindow = (locationCode: string, rank: number) => {
           if (scenarioId !== "live") {
@@ -369,14 +389,15 @@ export function FloodMap({ selected, select }: { selected: string; select: (code
         const mapZones = showZones ? floodZones.map(zone => {
           const rain = getRain(zone.locationCode);
           const screening = roadScreening(rain, zone.triggerMm24h, activeHorizon);
-          const coreColor = screening.rank >= 4 ? "#dc2626" : screening.rank === 3 ? "#f97316" : screening.rank === 2 ? "#eab308" : "#22c55e";
-          const outerColor = screening.rank >= 4 ? "#f97316" : screening.rank === 3 ? "#eab308" : "#22c55e";
+          if (screening.rank < 2) return null;
+          const coreColor = screening.rank >= 4 ? "#dc2626" : screening.rank === 3 ? "#f97316" : "#eab308";
+          const outerColor = screening.rank >= 4 ? "#f97316" : "#eab308";
           const zoneWindow = formatFloodWindow(zone.locationCode, screening.rank);
           return {
             ...zone,
             coreColor,
             outerColor,
-            active: screening.rank >= 2,
+            active: true,
             content: <>
               <strong className="popup-name">{zone.name}</strong>
               <div style={{ fontWeight: 700, color: coreColor }}>{screening.label} ({screening.depth})</div>
@@ -385,8 +406,8 @@ export function FloodMap({ selected, select }: { selected: string; select: (code
               <p style={{ margin: "6px 0 0" }}>{zone.elevationNote}</p>
             </>,
           };
-        }) : undefined;
-        const selectedRoadObj = roads.find(r => r.id === focusedRoad);
+        }).filter((z): z is NonNullable<typeof z> => z !== null) : undefined;
+        const selectedRoadObj = mapRoads.find(r => r.id === focusedRoad);
 
         return <>
         <div className="scenario-bar" role="group" aria-label="Chế độ xem dự báo hoặc đối chiếu lịch sử">
@@ -485,29 +506,38 @@ export function FloodMap({ selected, select }: { selected: string; select: (code
           <span className="corridor-legend-item"><i style={{ backgroundColor: "#eab308" }} />Ngập nhẹ (5–15 cm) · Đi chậm</span>
           <span className="corridor-legend-item"><i style={{ backgroundColor: "#16a34a" }} />Cao ráo (&lt; 5 cm) · Gợi ý né ngập</span>
         </div>
-        <div className="road-groups">
-          <div className="road-group-card">
-            <h4><i className="road-dot" style={{ backgroundColor: "#dc2626" }} />Các đoạn đường có nguy cơ ngập ({floodRiskRoads.length})</h4>
-            <div className="flood-stations">{floodRiskRoads.length ? floodRiskRoads.map(road => {
-              const win = scenarioFloodWindow(scenarioId, road.screening.rank);
-              return <button type="button" className="button secondary" key={road.id}
+        {floodRiskRoads.length > 0 ? (
+          <div className="road-groups">
+            <div className="road-group-card">
+              <h4><i className="road-dot" style={{ backgroundColor: "#dc2626" }} />Các đoạn đường có nguy cơ ngập ({floodRiskRoads.length})</h4>
+              <div className="flood-stations">{floodRiskRoads.map(road => {
+                const win = scenarioFloodWindow(scenarioId, road.screening.rank);
+                return <button type="button" className="button secondary" key={road.id}
+                  aria-pressed={focusedRoad === road.id} onClick={() => { setFocused(road.locationCode); setFocusedRoad(road.id); }}>
+                  <MapPin size={15} style={{ color: road.screening.color, flexShrink: 0 }} />
+                  <span>{road.name}
+                    <small style={{ color: road.screening.color }}>{road.screening.label} ({road.screening.depth}){win ? ` · ${win}` : ""}</small>
+                  </span>
+                </button>;
+              })}</div>
+            </div>
+            <div className="road-group-card">
+              <h4><i className="road-dot" style={{ backgroundColor: "#16a34a" }} />Tuyến cao ráo / Gợi ý né ngập ({saferAndLowRoads.length})</h4>
+              <div className="flood-stations">{saferAndLowRoads.map(road => <button type="button" className="button secondary" key={road.id}
                 aria-pressed={focusedRoad === road.id} onClick={() => { setFocused(road.locationCode); setFocusedRoad(road.id); }}>
                 <MapPin size={15} style={{ color: road.screening.color, flexShrink: 0 }} />
-                <span>{road.name}
-                  <small style={{ color: road.screening.color }}>{road.screening.label} ({road.screening.depth}){win ? ` · ${win}` : ""}</small>
-                </span>
-              </button>;
-            }) : <p className="chart-note">Với lượng mưa dự báo hiện tại, chưa có đoạn đường nào vượt ngưỡng ngập. Hãy chọn một sự kiện lịch sử phía trên để xem bản đồ chuyển màu & khung giờ ngập khi mưa lớn.</p>}</div>
+                <span>{road.name}<small>{road.fromLabel} → {road.toLabel} · {road.screening.depth}</small></span>
+              </button>)}</div>
+            </div>
           </div>
-          <div className="road-group-card">
-            <h4><i className="road-dot" style={{ backgroundColor: "#16a34a" }} />Tuyến cao ráo / Gợi ý né ngập ({saferAndLowRoads.length})</h4>
-            <div className="flood-stations">{saferAndLowRoads.map(road => <button type="button" className="button secondary" key={road.id}
-              aria-pressed={focusedRoad === road.id} onClick={() => { setFocused(road.locationCode); setFocusedRoad(road.id); }}>
-              <MapPin size={15} style={{ color: road.screening.color, flexShrink: 0 }} />
-              <span>{road.name}<small>{road.fromLabel} → {road.toLabel} · {road.screening.depth}</small></span>
-            </button>)}</div>
+        ) : (
+          <div className="advice-box" style={{ borderLeftColor: "#16a34a", marginTop: ".85rem" }}>
+            <h3 style={{ margin: "0 0 .25rem" }}>Hiện tại không có tuyến đường nào có nguy cơ ngập</h3>
+            <p className="metric-note" style={{ margin: 0 }}>
+              Lượng mưa dự báo trong khung giờ này nằm dưới ngưỡng gây ngập của các tuyến đường, nên bản đồ ẩn các tuyến cảnh báo để giữ giao diện gọn sạch. Chọn một đợt mưa lịch sử phía trên để xem đối chiếu các đoạn đường ngập & tuyến né ngập khi mưa lớn.
+            </p>
           </div>
-        </div>
+        )}
         <div className="flood-stations">{rows.map((row) =>
           <button className="button secondary" key={row.point.code} type="button"
             onClick={() => mappedPoints.some(point => point.code === row.point.code) ? focus(row.point.code) : select(row.point.code)}

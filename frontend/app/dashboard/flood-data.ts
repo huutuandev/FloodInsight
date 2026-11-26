@@ -409,8 +409,8 @@ export function mapEvidence(row: PointRisk | undefined, horizon: MapHorizon) {
     ? assessment.horizon_breakdown.find(entry => (entry?.horizon_hours ?? entry?.hours) === hours) : undefined;
   const risk = horizon === "summary" ? assessment?.risk_category : breakdown?.risk_category;
   const forecastRain = breakdown?.rain_mm ?? breakdown?.rainfall_mm ?? assessment?.forecast_rainfall?.[`forecast_rain_next_${hours}h_mm`] ?? null;
-  const prevRain = horizon === "summary" ? (assessment?.observed_rainfall?.rain_prev_24h_mm ?? null) : null;
-  const rain = prevRain != null && forecastRain != null ? Math.max(prevRain, forecastRain) : (forecastRain ?? prevRain);
+  // Use actual forecast rainfall (not stale yesterday rain) to determine upcoming road flooding
+  const rain = forecastRain;
   return {
     category: risk && categories.includes(risk) ? risk : "Insufficient Data" as const,
     rain,
