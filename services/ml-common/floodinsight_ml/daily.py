@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
 import numpy as np
@@ -28,6 +28,7 @@ class NextDayRequest(BaseModel):
     location: Location
     version: Version | None = None
     issued_at: AwareDatetime | None = None
+    target_date: date | None = None
 
 
 def daily_rows(start, end, location):
@@ -91,7 +92,7 @@ def available_at(row, mode):
 
 
 def _fetch_nwp_batch(start, end, location):
-    """Fetch daily ECMWF/GFS totals for a whole date range in a single query."""
+    """Fetch daily NWP totals combining live Open-Meteo forecasts with ECMWF/GFS warehouse rows."""
     lookup = {}
     try:
         with connect() as conn:
@@ -113,6 +114,38 @@ def _fetch_nwp_batch(start, end, location):
                 lookup[(row["location"], row["day"])] = (
                     float(row["ecmwf_rain"]), float(row["gfs_rain"]), int(row["ecmwf_count"]) > 0,
                 )
+            # Overlay freshest live hourly forecasts from raw_weather_forecasts (updated every 5 min)
+            live_rows = conn.execute("""
+                WITH latest_hourly AS (
+                    SELECT DISTINCT ON (r.source_location_key, r.valid_at)
+                           r.source_location_key AS location,
+                           ((r.valid_at - interval '1 hour') AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS day,
+                           GREATEST(
+                               COALESCE(CASE WHEN jsonb_typeof(r.payload->'values'->'precipitation') = 'number'
+                                    THEN (r.payload->'values'->>'precipitation')::float8 END, 0.0),
+                               COALESCE(CASE WHEN jsonb_typeof(r.payload->'values'->'rain') = 'number'
+                                    THEN (r.payload->'values'->>'rain')::float8 END, 0.0)
+                           ) AS rain_mm
+                    FROM raw_weather_forecasts r
+                    JOIN data_sources d ON d.id = r.source_id
+                    WHERE d.code = 'open-meteo-forecast-api'
+                      AND (%s::text IS NULL OR r.source_location_key = %s)
+                      AND r.payload->>'kind' = 'hourly'
+                      AND r.valid_at > warehouse_local_day_start(%s)
+                      AND r.valid_at <= warehouse_local_day_start(%s::date + 1)
+                    ORDER BY r.source_location_key, r.valid_at, r.received_at DESC, r.id DESC
+                )
+                SELECT location, day, sum(rain_mm)::float8 AS live_rain, count(*) AS hrs
+                FROM latest_hourly
+                GROUP BY location, day
+                HAVING count(*) >= 12
+            """, (location, location, start, end)).fetchall()
+            for row in live_rows:
+                key = (row["location"], row["day"])
+                live_val = float(row["live_rain"])
+                prev_ecmwf, prev_gfs, _ = lookup.get(key, (live_val, live_val, True))
+                # Prioritize the live 5-min Open-Meteo forecast as the primary NWP signal
+                lookup[key] = (live_val, prev_gfs if prev_gfs > 0 else live_val, True)
     except Exception:
         pass
     return lookup
@@ -256,11 +289,14 @@ def inference_input(payload, model):
         raise DataUnavailable("Issue time must fall between model creation and the present")
     if payload.location not in model["training_metadata"]["locations"]:
         raise DataUnavailable("This model has no training data for the requested location")
-    with connect() as conn:
-        calendar = conn.execute("""
-            SELECT (%s::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh')::date + 1 AS target
-        """, (issued,)).fetchone()
-    target = calendar["target"]
+    if payload.target_date is not None:
+        target = payload.target_date
+    else:
+        with connect() as conn:
+            calendar = conn.execute("""
+                SELECT (%s::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh')::date + 1 AS target
+            """, (issued,)).fetchone()
+        target = calendar["target"]
     history = daily_rows(target - 14 * DAY, target - 1 * DAY, payload.location)
     features = lag_features(
         {row["day"]: row for row in history}, target, issued, "recorded",

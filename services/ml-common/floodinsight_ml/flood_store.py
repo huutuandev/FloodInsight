@@ -30,8 +30,12 @@ QUERIES = {
                    r.id, r.source_location_key AS location, d.code AS source,
                    (r.valid_at - interval '1 hour') AS hour,
                    receipt.received_at, r.payload->'grid' AS grid,
-                   CASE WHEN jsonb_typeof(r.payload->'values'->'rain') = 'number'
-                        THEN (r.payload->'values'->>'rain')::float8 END AS rain
+                   GREATEST(
+                       COALESCE(CASE WHEN jsonb_typeof(r.payload->'values'->'precipitation') = 'number'
+                            THEN (r.payload->'values'->>'precipitation')::float8 END, 0.0),
+                       COALESCE(CASE WHEN jsonb_typeof(r.payload->'values'->'rain') = 'number'
+                            THEN (r.payload->'values'->>'rain')::float8 END, 0.0)
+                   ) AS rain
             FROM raw_weather_forecasts r
             JOIN data_sources d ON d.id = r.source_id
             JOIN forecast_snapshot_receipts receipt ON receipt.snapshot_id = r.id
@@ -53,8 +57,12 @@ QUERIES = {
     "forecast": """
         SELECT r.id, receipt.run_id, r.source_location_key AS location, d.code AS source,
                receipt.received_at, r.valid_at, r.issued_at, r.payload->'grid' AS grid,
-               CASE WHEN jsonb_typeof(r.payload->'values'->'rain') = 'number'
-                    THEN (r.payload->'values'->>'rain')::float8 END AS rain
+               GREATEST(
+                   COALESCE(CASE WHEN jsonb_typeof(r.payload->'values'->'precipitation') = 'number'
+                        THEN (r.payload->'values'->>'precipitation')::float8 END, 0.0),
+                   COALESCE(CASE WHEN jsonb_typeof(r.payload->'values'->'rain') = 'number'
+                        THEN (r.payload->'values'->>'rain')::float8 END, 0.0)
+               ) AS rain
         FROM raw_weather_forecasts r JOIN data_sources d ON d.id = r.source_id
         JOIN forecast_snapshot_receipts receipt ON receipt.snapshot_id = r.id
         WHERE d.code = :forecast AND r.valid_at > :start AND r.valid_at <= :target_end
@@ -124,7 +132,7 @@ GRID_INVENTORY = """
 
 
 def read(execute, start, end, as_of, *, include_inventory=True):
-    params = dict(start=start, end=end, as_of=as_of, target_end=end + TARGET, era5=ERA5, forecast=FORECAST,
+    params = dict(start=start, end=end, as_of=as_of, target_end=end + timedelta(hours=36), era5=ERA5, forecast=FORECAST,
                   history_start=start - ERA5_DELAY - 72 * HOUR, label_history_start=start - timedelta(days=365))
     points = list(execute("SELECT id, code, latitude, longitude FROM dim_location ORDER BY code", {}))
     inputs = defaultdict(lambda: defaultdict(list))

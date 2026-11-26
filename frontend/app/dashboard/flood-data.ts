@@ -302,24 +302,24 @@ export function scenarioFloodWindow(scenarioId: HistoricalScenarioId, rank: numb
   if (scenarioId === "live" || rank < 2) return null;
   const windows: Record<Exclude<HistoricalScenarioId, "live">, Record<number, string>> = {
     "monsoon-2023": {
-      4: "05:30 → 09:30 ICT (4,0 giờ · Đỉnh 07:00)",
-      3: "06:00 → 08:30 ICT (2,5 giờ · Đỉnh 07:00)",
-      2: "06:30 → 08:00 ICT (1,5 giờ)",
+      4: "Kéo dài 4,0 giờ đồng hồ (05:30 → 09:30 ICT · Đỉnh 07:00)",
+      3: "Kéo dài 2,5 giờ đồng hồ (06:00 → 08:30 ICT · Đỉnh 07:00)",
+      2: "Kéo dài 1,5 giờ đồng hồ (06:30 → 08:00 ICT)",
     },
     "trami-2024": {
-      4: "11:00 → 16:30 ICT (5,5 giờ · Đỉnh 13:30)",
-      3: "12:00 → 15:30 ICT (3,5 giờ · Đỉnh 13:30)",
-      2: "12:30 → 14:30 ICT (2,0 giờ)",
+      4: "Kéo dài 5,5 giờ đồng hồ (11:00 → 16:30 ICT · Đỉnh 13:30)",
+      3: "Kéo dài 3,5 giờ đồng hồ (12:00 → 15:30 ICT · Đỉnh 13:30)",
+      2: "Kéo dài 2,0 giờ đồng hồ (12:30 → 14:30 ICT)",
     },
     "cloudburst-2024-11": {
-      4: "06:00 → 12:30 ICT (6,5 giờ · Đỉnh 08:30)",
-      3: "06:30 → 11:00 ICT (4,5 giờ · Đỉnh 08:30)",
-      2: "07:00 → 09:30 ICT (2,5 giờ)",
+      4: "Kéo dài 6,5 giờ đồng hồ (06:00 → 12:30 ICT · Đỉnh 08:30)",
+      3: "Kéo dài 4,5 giờ đồng hồ (06:30 → 11:00 ICT · Đỉnh 08:30)",
+      2: "Kéo dài 2,5 giờ đồng hồ (07:00 → 09:30 ICT)",
     },
     "son-ca-2022": {
-      4: "18:00 → 04:00+1 ICT (10,0 giờ · Đỉnh 22:00)",
-      3: "19:00 → 02:00+1 ICT (7,0 giờ · Đỉnh 22:00)",
-      2: "20:00 → 00:30+1 ICT (4,5 giờ)",
+      4: "Kéo dài 10,0 giờ đồng hồ (18:00 → 04:00+1 ICT · Đỉnh 22:00)",
+      3: "Kéo dài 7,0 giờ đồng hồ (19:00 → 02:00+1 ICT · Đỉnh 22:00)",
+      2: "Kéo dài 4,5 giờ đồng hồ (20:00 → 00:30+1 ICT)",
     },
   };
   return windows[scenarioId][rank] ?? null;

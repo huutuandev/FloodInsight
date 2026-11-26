@@ -149,9 +149,13 @@ def category(score, config):
     return CATEGORIES[sum(score >= boundary for boundary in config.category_starts)]
 
 
-def normalize(value, feature, config, scale=1):
+def normalize(value, feature, config, scale=1, district_threshold_24h=None):
     ramp = config.ramps[feature]
-    norm = min(1, max(0, (value - ramp.low) / ((ramp.high - ramp.low) * scale)))
+    high = ramp.high
+    if district_threshold_24h is not None and feature in ("forecast_rain_next_24h_mm", "rain_prev_24h_mm"):
+        # Scale rainfall normalization ramp to the district's actual 24h flood trigger threshold
+        high = max(40.0, float(district_threshold_24h) * 1.5)
+    norm = min(1, max(0, (value - ramp.low) / ((high - ramp.low) * scale)))
     return 1 - norm if feature == "elevation_m" else norm
 
 
@@ -165,10 +169,10 @@ def compute_flood_window(hourly_forecast, trigger_24h_mm, sea_level_m=None):
             "max_rain_1h_mm": None, "max_rain_3h_mm": None,
             "tide_level_m": sea_level_m, "tide_impact": "unknown",
         }
-    drain_rate = max(4.0, float(trigger_24h_mm) / 6.0)
+    drain_rate = max(8.5, float(trigger_24h_mm) * 0.25)
     tide_slow = sea_level_m is not None and sea_level_m > 0.6
     if tide_slow:
-        drain_rate *= max(0.75, 1.0 - (float(sea_level_m) - 0.6) * 0.25)
+        drain_rate *= max(0.82, 1.0 - (float(sea_level_m) - 0.6) * 0.18)
     onset_acc_mm = max(12.0, float(trigger_24h_mm) * 0.30)
     rains = [float(item["rain_mm"]) for item in hourly_forecast]
     max_1h = round(max(rains), 2)
@@ -194,7 +198,7 @@ def compute_flood_window(hourly_forecast, trigger_24h_mm, sea_level_m=None):
             peak_at = step["valid_at"]
         if onset_at is None and (acc >= onset_acc_mm or rolling_3h >= float(trigger_24h_mm) * 0.65):
             onset_at = step["valid_at"]
-        elif onset_at is not None and recede_at is None and acc < onset_acc_mm * 0.45 and r < drain_rate * 0.6:
+        elif onset_at is not None and recede_at is None and acc < onset_acc_mm * 0.65 and r < drain_rate * 0.65:
             recede_at = step["valid_at"]
 
     if onset_at is not None and recede_at is None:
@@ -225,6 +229,8 @@ def assess(row, config):
         if type(value) in (int, float) and math.isfinite(value) and key in provenance
         and provenance[key]["available_at"] <= issue
     }
+    thresholds = DISTRICT_FLOOD_THRESHOLDS.get(row["location"], DEFAULT_FLOOD_THRESHOLDS)
+    trig_24h = thresholds["24h_mm"]
     factors = {}
     alerts = set()
     for name, keys in FACTORS.items():
@@ -233,7 +239,9 @@ def assess(row, config):
         alerts.update(missing)
         factors[name] = {
             "weight": config.weights[name], "inputs": {key: features.get(key) for key in keys},
-            "normalized": None if missing else math.fsum(normalize(features[key], key, config) for key in keys) / len(keys),
+            "normalized": None if missing else math.fsum(
+                normalize(features[key], key, config, district_threshold_24h=trig_24h) for key in keys
+            ) / len(keys),
             "missing_inputs": missing, "contribution_points": None,
         }
     included = {name: factor for name, factor in factors.items() if factor["normalized"] is not None}
@@ -254,7 +262,6 @@ def assess(row, config):
                         "first_valid_at": record.get("first_valid_at"), "last_valid_at": record.get("last_valid_at"),
                         "availability_age_seconds": (issue - record["available_at"]).total_seconds()}
                  for name, record in provenance.items() if record["available_at"] <= issue}
-    thresholds = DISTRICT_FLOOD_THRESHOLDS.get(row["location"], DEFAULT_FLOOD_THRESHOLDS)
     horizon_breakdown = []
     for hours in (6, 12, 24):
         rain_val = forecast.get(f"forecast_rain_next_{hours}h_mm")
@@ -278,7 +285,7 @@ def assess(row, config):
     has_in_situ = "verified_in_situ" in prov_types
     f24 = forecast.get("forecast_rain_next_24h_mm")
     p24 = observed.get("rain_prev_24h_mm")
-    effective_rain = max(v for v in (f24, p24) if v is not None) if (f24 is not None or p24 is not None) else None
+    effective_rain = f24 if f24 is not None else p24
     hourly_forecast = row.get("hourly_forecast") or []
     sea_level_m = row.get("sea_level_m")
     district_window = compute_flood_window(hourly_forecast, thresholds["24h_mm"], sea_level_m)
@@ -335,6 +342,7 @@ def sensitivity(row, config):
     baseline = assess(row, config)
     if baseline["risk_index"] is None:
         return None
+    trig_24h = DISTRICT_FLOOD_THRESHOLDS.get(row["location"], DEFAULT_FLOOD_THRESHOLDS)["24h_mm"]
     included = [name for name, factor in baseline["factors"].items() if factor["normalized"] is not None]
     trials = []
     for name in included:
@@ -349,7 +357,7 @@ def sensitivity(row, config):
             for name in included:
                 keys = FACTORS[name]
                 score += config.weights[name] * math.fsum(
-                    normalize(row["features"][key], key, config, scale if key == feature else 1) for key in keys
+                    normalize(row["features"][key], key, config, scale if key == feature else 1, district_threshold_24h=trig_24h) for key in keys
                 ) / len(keys)
             trials.append(100 * score / baseline["weight_coverage"])
     return {"baseline": baseline["risk_index"], "min": round(min(trials), 6), "max": round(max(trials), 6),

@@ -91,9 +91,44 @@ def predict_class(model, features):
 
 
 def calibrate_classification(location_code: str, target_date, raw_label: str, raw_probs: dict, thresholds: Thresholds):
-    """Hybrid NWP-ML calibration for classification to avoid missing heavy rain events."""
+    """Align classification with predicted rainfall & live NWP so class labels 100% match rainfall mm."""
+    pred_rain, live_rain, ecmwf, gfs = None, None, None, None
     try:
         with connect() as conn:
+            pred_row = conn.execute("""
+                SELECT r.rainfall_mm::float8 AS rain_mm
+                FROM prediction_results r
+                JOIN dim_location l ON l.id = r.location_id
+                JOIN dim_time t ON t.hour_start_utc = r.target_hour_utc
+                WHERE l.code = %s AND t.local_date = %s
+                ORDER BY r.issued_at DESC LIMIT 1
+            """, (location_code, target_date)).fetchone()
+            if pred_row and pred_row.get("rain_mm") is not None:
+                pred_rain = float(pred_row["rain_mm"])
+
+            live_row = conn.execute("""
+                WITH latest_hourly AS (
+                    SELECT DISTINCT ON (r.valid_at)
+                           GREATEST(
+                               COALESCE(CASE WHEN jsonb_typeof(r.payload->'values'->'precipitation') = 'number'
+                                    THEN (r.payload->'values'->>'precipitation')::float8 END, 0.0),
+                               COALESCE(CASE WHEN jsonb_typeof(r.payload->'values'->'rain') = 'number'
+                                    THEN (r.payload->'values'->>'rain')::float8 END, 0.0)
+                           ) AS rain_mm
+                    FROM raw_weather_forecasts r
+                    JOIN data_sources d ON d.id = r.source_id
+                    WHERE d.code = 'open-meteo-forecast-api'
+                      AND r.source_location_key = %s
+                      AND r.payload->>'kind' = 'hourly'
+                      AND r.valid_at > warehouse_local_day_start(%s)
+                      AND r.valid_at <= warehouse_local_day_start(%s::date + 1)
+                    ORDER BY r.valid_at, r.received_at DESC, r.id DESC
+                )
+                SELECT sum(rain_mm)::float8 AS total_rain, count(*) AS hrs FROM latest_hourly
+            """, (location_code, target_date, target_date)).fetchone()
+            if live_row and live_row.get("total_rain") is not None and int(live_row.get("hrs") or 0) >= 12:
+                live_rain = float(live_row["total_rain"])
+
             row = conn.execute("""
                 SELECT
                     coalesce(sum(CASE WHEN s.code = 'open-meteo-ecmwf-ifs' THEN f.rainfall_mm END), null) AS ecmwf_rain,
@@ -108,21 +143,36 @@ def calibrate_classification(location_code: str, target_date, raw_label: str, ra
             ecmwf = float(row["ecmwf_rain"]) if row and row.get("ecmwf_rain") is not None else None
             gfs = float(row["gfs_rain"]) if row and row.get("gfs_rain") is not None else None
     except Exception:
-        ecmwf, gfs = None, None
+        pass
 
-    if ecmwf is not None:
-        gfs_val = gfs if gfs is not None else ecmwf
-        hybrid_rain = 0.65 * ecmwf + 0.35 * gfs_val
-        if location_code == "hai-chau" and hybrid_rain >= 25.0:
-            hybrid_rain *= 1.25
+    reference_rain = pred_rain
+    if reference_rain is None:
+        primary_nwp = live_rain if live_rain is not None else ecmwf
+        if primary_nwp is not None:
+            secondary_nwp = ecmwf if (live_rain is not None and ecmwf is not None) else (gfs if gfs is not None else primary_nwp)
+            reference_rain = 0.70 * primary_nwp + 0.30 * secondary_nwp
 
-        if hybrid_rain >= thresholds.heavy_mm:
-            return "Heavy Rain", {"No Rain": 0.01, "Light Rain": 0.04, "Moderate Rain": 0.15, "Heavy Rain": 0.80}
-        if hybrid_rain >= thresholds.moderate_mm:
-            return "Moderate Rain", {"No Rain": 0.03, "Light Rain": 0.22, "Moderate Rain": 0.65, "Heavy Rain": 0.10}
-        if hybrid_rain >= thresholds.light_mm:
-            return "Light Rain", {"No Rain": 0.05, "Light Rain": 0.80, "Moderate Rain": 0.12, "Heavy Rain": 0.03}
-        return "No Rain", {"No Rain": 0.92, "Light Rain": 0.06, "Moderate Rain": 0.01, "Heavy Rain": 0.01}
+    if reference_rain is not None:
+        if reference_rain >= thresholds.heavy_mm:
+            target_cls = "Heavy Rain"
+            nwp_prior = {"No Rain": 0.01, "Light Rain": 0.05, "Moderate Rain": 0.19, "Heavy Rain": 0.75}
+        elif reference_rain >= thresholds.moderate_mm:
+            target_cls = "Moderate Rain"
+            nwp_prior = {"No Rain": 0.02, "Light Rain": 0.18, "Moderate Rain": 0.68, "Heavy Rain": 0.12}
+        elif reference_rain >= thresholds.light_mm:
+            target_cls = "Light Rain"
+            nwp_prior = {"No Rain": 0.08, "Light Rain": 0.74, "Moderate Rain": 0.15, "Heavy Rain": 0.03}
+        else:
+            target_cls = "No Rain"
+            nwp_prior = {"No Rain": 0.88, "Light Rain": 0.09, "Moderate Rain": 0.02, "Heavy Rain": 0.01}
+
+        blended = {
+            cls: round(0.70 * nwp_prior[cls] + 0.30 * float(raw_probs.get(cls, 0.0)), 4)
+            for cls in CLASSES
+        }
+        total = sum(blended.values()) or 1.0
+        normalized = {cls: round(val / total, 4) for cls, val in blended.items()}
+        return target_cls, normalized
 
     return raw_label, raw_probs
 

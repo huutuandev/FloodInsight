@@ -41,14 +41,18 @@ def next_day_results(kind, version_id, limit, offset, location=None, start=None,
         table, columns = "classification_results", "r.label, r.confidence::float8, r.probabilities"
     with connect() as conn:
         return conn.execute(f"""
-            SELECT l.code AS location, t.local_date AS target_date, r.issued_at, {columns}
-            FROM {table} r JOIN dim_location l ON l.id = r.location_id
-            JOIN dim_time t ON t.hour_start_utc = r.target_hour_utc
-            WHERE r.model_version_id = %s
-              AND (%s::text IS NULL OR l.code = %s)
-              AND (%s::date IS NULL OR t.local_date >= %s)
-              AND (%s::date IS NULL OR t.local_date <= %s)
-            ORDER BY r.target_hour_utc DESC, r.issued_at DESC, l.code
+            SELECT * FROM (
+                SELECT DISTINCT ON (r.target_hour_utc, l.code)
+                       l.code AS location, t.local_date AS target_date, r.issued_at, {columns}
+                FROM {table} r JOIN dim_location l ON l.id = r.location_id
+                JOIN dim_time t ON t.hour_start_utc = r.target_hour_utc
+                WHERE r.model_version_id = %s
+                  AND (%s::text IS NULL OR l.code = %s)
+                  AND (%s::date IS NULL OR t.local_date >= %s)
+                  AND (%s::date IS NULL OR t.local_date <= %s)
+                ORDER BY r.target_hour_utc DESC, l.code ASC, r.issued_at DESC
+            ) latest
+            ORDER BY target_date DESC, location ASC
             LIMIT %s OFFSET %s
         """, (version_id, location, location, start, start, end, end, limit, offset)).fetchall()
 

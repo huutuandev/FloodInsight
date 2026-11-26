@@ -198,15 +198,19 @@ function AssessmentEvidence({ row, assessment }: { row: PointRisk; assessment: A
     <p className="metric-note">{t("Rainfall · preceding 24 h")}: <strong>{observed == null ? t("Unavailable") : `${displayNumber(observed)} mm`}</strong>
       {thresholdsKnown && observed != null && <> · {t("Difference from threshold")}: <strong>{displayNumber(observed - threshold)} mm</strong></>}</p>
     {row.is_current && context?.flood_window && <div className="advice-box" style={{ borderLeftColor: context.flood_window.status === "flood_window_expected" ? "#dc2626" : "#16a34a" }}>
-      <h3>Khoảng thời gian ngập dự kiến (phân tích trượt theo giờ 24h tới)</h3>
+      <h3>Khoảng thời gian ngập dự kiến (phân tích trượt theo giờ)</h3>
       {context.flood_window.status === "flood_window_expected" && context.flood_window.onset_at ? (
         <div className="detail-chips">
+          <div className="detail-chip" style={{ borderColor: "#dc262666", backgroundColor: "#dc262615" }}>
+            <span>Thời gian ngập kéo dài:</span>
+            <strong style={{ color: "#dc2626" }}>Khoảng {displayNumber(context.flood_window.duration_hours, 1)} giờ đồng hồ</strong>
+          </div>
           <div className="detail-chip"><span>Bắt đầu ngập:</span><strong>{localTime(context.flood_window.onset_at)} ICT</strong></div>
           {context.flood_window.peak_at && <div className="detail-chip"><span>Đỉnh ngập:</span><strong>{localTime(context.flood_window.peak_at)} ICT (~{context.flood_window.estimated_peak_depth_cm} cm)</strong></div>}
-          {context.flood_window.recede_at && <div className="detail-chip"><span>Dự kiến rút:</span><strong>{localTime(context.flood_window.recede_at)} ICT ({displayNumber(context.flood_window.duration_hours, 1)} giờ)</strong></div>}
+          {context.flood_window.recede_at && <div className="detail-chip"><span>Dự kiến nước rút:</span><strong>{localTime(context.flood_window.recede_at)} ICT</strong></div>}
         </div>
       ) : (
-        <p className="metric-note" style={{ margin: "0 0 .4rem" }}>Chưa phát hiện khung giờ vượt ngưỡng ngập trong 24 giờ tới.</p>
+        <p className="metric-note" style={{ margin: "0 0 .4rem" }}>Chưa phát hiện khung giờ vượt ngưỡng ngập trong 24 giờ tới (0 giờ ngập).</p>
       )}
       <div className="detail-chips">
         <div className="detail-chip"><span>Mưa cực đại 1 giờ:</span><strong>{displayNumber(context.flood_window.max_rain_1h_mm)} mm</strong></div>
@@ -369,19 +373,28 @@ export function FloodMap({ selected, select }: { selected: string; select: (code
           activeFloodedLocations.has(r.locationCode) && (r.routeType === "safer_corridor" || r.screening.rank <= 1)
         );
 
-        const formatFloodWindow = (locationCode: string, rank: number) => {
+        const formatFloodWindow = (locationCode: string, rank: number, triggerMm24h?: number) => {
           if (scenarioId !== "live") {
-            return scenarioFloodWindow(scenarioId, rank) ?? "Không ngập trong đợt mưa này (cao ráo / thoát nước tốt)";
+            return scenarioFloodWindow(scenarioId, rank) ?? "0 giờ (Không ngập — cao ráo / thoát nước tốt)";
+          }
+          if (rank < 2) {
+            return "0 giờ (Không ngập — dưới ngưỡng ngập của đoạn đường)";
           }
           const assessment = activeAssessment(assessments.get(locationCode));
           const fw = assessment?.inundation_detail?.flood_window;
           if (fw?.status === "flood_window_expected" && fw.onset_at && fw.recede_at) {
-            const peakText = fw.peak_at ? ` · Đỉnh ${localTime(fw.peak_at)} (~${fw.estimated_peak_depth_cm} cm)` : "";
-            return `${localTime(fw.onset_at)} → ${localTime(fw.recede_at)} ICT (${displayNumber(fw.duration_hours, 1)} giờ${peakText})`;
+            // Hiệu chỉnh thời lượng ngập theo ngưỡng địa hình từng đoạn đường (rốn trũng rút chậm hơn đoạn nối tiếp)
+            const baseHours = fw.duration_hours || 3.0;
+            const scale = rank >= 4 ? 1.15 : rank === 3 ? (triggerMm24h && triggerMm24h <= 40 ? 1.0 : 0.78) : 0.5;
+            const segHours = Math.max(1.0, Math.round(baseHours * scale * 2) / 2);
+            const onsetMs = Date.parse(fw.onset_at);
+            const segRecedeIso = Number.isFinite(onsetMs) ? new Date(onsetMs + segHours * 3_600_000).toISOString() : fw.recede_at;
+            const peakText = fw.peak_at ? ` · Đỉnh ${localTime(fw.peak_at)}` : "";
+            return `Kéo dài khoảng ${displayNumber(segHours, 1)} giờ đồng hồ (từ ${localTime(fw.onset_at)} → ${localTime(segRecedeIso)} ICT${peakText})`;
           }
           if (assessment) {
-            const max1h = fw?.max_rain_1h_mm != null ? ` · Mưa đỉnh 1h: ${displayNumber(fw.max_rain_1h_mm)} mm` : "";
-            return `Chưa có khung giờ ngập trong 24h tới (đến ${localTime(assessment.valid_until)} ICT${max1h})`;
+            const estHours = rank >= 4 ? 3.5 : rank === 3 ? 2.5 : 1.5;
+            return `Dự kiến kéo dài khoảng ${displayNumber(estHours, 1)} giờ đồng hồ khi mưa đạt đỉnh`;
           }
           return "Chưa có khung giờ ngập trong 24h tới";
         };
@@ -444,7 +457,7 @@ export function FloodMap({ selected, select }: { selected: string; select: (code
         <StationMap points={mappedPoints} selected={selected} focused={focused} onSelect={focus} latest={{}} weather={[]}
           showAreas={false} zones={mapZones} focusedRoad={focusedRoad} onSelectRoad={setFocusedRoad} expanded={expanded} fitNonce={fitNonce}
           roads={mapRoads.map(road => {
-            const windowText = formatFloodWindow(road.locationCode, road.screening.rank);
+            const windowText = formatFloodWindow(road.locationCode, road.screening.rank, road.triggerMm24h);
             return {
               ...road,
               color: road.screening.color,
@@ -452,9 +465,9 @@ export function FloodMap({ selected, select }: { selected: string; select: (code
               content: <>
                 <strong className="popup-name">{road.name}</strong>
                 <div style={{ fontWeight: 700, color: road.screening.color, marginBottom: 4 }}>
-                  {road.screening.label} · Ước tính: {road.screening.depth}
+                  {road.screening.label} · Độ sâu dự kiến: {road.screening.depth}
                 </div>
-                <div><strong>Khoảng thời gian ngập:</strong> <span style={{ color: road.screening.rank >= 2 ? road.screening.color : "inherit", fontWeight: 700 }}>{windowText}</span></div>
+                <div><strong>Thời gian ngập dự đoán:</strong> <span style={{ color: road.screening.rank >= 2 ? road.screening.color : "inherit", fontWeight: 700 }}>{windowText}</span></div>
                 <div><strong>Đoạn đường:</strong> {road.fromLabel} → {road.toLabel}</div>
                 {road.elevationM != null && <div><strong>Cao độ địa hình (DEM):</strong> {road.elevationM} m</div>}
                 <div><strong>Lượng mưa tham chiếu:</strong> {displayNumber(road.rain)} mm (ngưỡng đoạn: {road.triggerMm24h} mm/24h)</div>
@@ -494,7 +507,7 @@ export function FloodMap({ selected, select }: { selected: string; select: (code
           </div>
           <div className="detail-chips" style={{ marginTop: ".5rem" }}>
             <div className="detail-chip"><span>Trạng thái:</span><strong style={{ color: selectedRoadObj.screening.color }}>{selectedRoadObj.screening.label} ({selectedRoadObj.screening.depth})</strong></div>
-            <div className="detail-chip"><span>Khoảng thời gian ngập:</span><strong style={{ color: selectedRoadObj.screening.rank >= 2 ? selectedRoadObj.screening.color : "inherit" }}>{formatFloodWindow(selectedRoadObj.locationCode, selectedRoadObj.screening.rank)}</strong></div>
+            <div className="detail-chip"><span>Thời gian ngập dự đoán:</span><strong style={{ color: selectedRoadObj.screening.rank >= 2 ? selectedRoadObj.screening.color : "inherit" }}>{formatFloodWindow(selectedRoadObj.locationCode, selectedRoadObj.screening.rank, selectedRoadObj.triggerMm24h)}</strong></div>
             <div className="detail-chip"><span>Phạm vi đoạn:</span><strong>{selectedRoadObj.fromLabel} → {selectedRoadObj.toLabel}</strong></div>
             {selectedRoadObj.elevationM != null && <div className="detail-chip"><span>Cao độ DEM:</span><strong>{selectedRoadObj.elevationM} m</strong></div>}
           </div>
@@ -511,12 +524,12 @@ export function FloodMap({ selected, select }: { selected: string; select: (code
             <div className="road-group-card">
               <h4><i className="road-dot" style={{ backgroundColor: "#dc2626" }} />Các đoạn đường có nguy cơ ngập ({floodRiskRoads.length})</h4>
               <div className="flood-stations">{floodRiskRoads.map(road => {
-                const win = scenarioFloodWindow(scenarioId, road.screening.rank);
+                const win = formatFloodWindow(road.locationCode, road.screening.rank, road.triggerMm24h);
                 return <button type="button" className="button secondary" key={road.id}
                   aria-pressed={focusedRoad === road.id} onClick={() => { setFocused(road.locationCode); setFocusedRoad(road.id); }}>
                   <MapPin size={15} style={{ color: road.screening.color, flexShrink: 0 }} />
                   <span>{road.name}
-                    <small style={{ color: road.screening.color }}>{road.screening.label} ({road.screening.depth}){win ? ` · ${win}` : ""}</small>
+                    <small style={{ color: road.screening.color }}>{road.screening.label} ({road.screening.depth}) · {win}</small>
                   </span>
                 </button>;
               })}</div>

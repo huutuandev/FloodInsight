@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 import logging
 import os
 
@@ -39,21 +40,24 @@ def _run_auto_cycle(app: FastAPI) -> None:
             store_assessment(conn, (location_id, issuance, config.version, digest(result)), result, config_json)
     logger.info("Auto-refresh flood risk assessments completed for %d locations (issuance=%s)", len(results), issuance.isoformat())
 
-    # 2. Auto-run next-day XGBoost rainfall predictions for all registered locations
+    # 2. Auto-run XGBoost rainfall predictions for both today ICT and tomorrow ICT
     try:
         model, artifact = Models("prediction", "next-day-rainfall-regressor", app.state.settings.artifact_dir).load(None)
+        today_ict = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+        target_dates = [today_ict, today_ict + timedelta(days=1)]
         updated = 0
-        for loc_code in sorted(locations):
-            try:
-                payload = NextDayRequest(location=loc_code)
-                target, issued, location, features = inference_input(payload, model)
-                raw_value = float(artifact.predict(features)[0])
-                calibrated_value = calibrate_prediction(loc_code, target, raw_value)
-                save_next_day("prediction", model["id"], target, issued, location, calibrated_value)
-                updated += 1
-            except Exception as exc:
-                logger.warning("Auto-prediction skipped for %s: %s", loc_code, exc)
-        logger.info("Auto-refresh XGBoost rainfall predictions completed for %d locations", updated)
+        for t_date in target_dates:
+            for loc_code in sorted(locations):
+                try:
+                    payload = NextDayRequest(location=loc_code, target_date=t_date)
+                    target, issued, location, features = inference_input(payload, model)
+                    raw_value = float(artifact.predict(features)[0])
+                    calibrated_value = calibrate_prediction(loc_code, target, raw_value)
+                    save_next_day("prediction", model["id"], target, issued, location, calibrated_value)
+                    updated += 1
+                except Exception as exc:
+                    logger.warning("Auto-prediction skipped for %s (%s): %s", loc_code, t_date, exc)
+        logger.info("Auto-refresh XGBoost rainfall predictions completed (%d records)", updated)
     except Exception as exc:
         logger.info("Auto-prediction deferred (no active model or data): %s", exc)
 

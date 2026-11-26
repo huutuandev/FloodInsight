@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 import logging
 import os
 
@@ -22,18 +23,21 @@ def _run_auto_classification(app: FastAPI) -> None:
         locations = [row["code"] for row in conn.execute("SELECT code FROM dim_location ORDER BY code")]
     model, artifact = Models("classification", "next-day-rainfall-classifier", app.state.settings.artifact_dir).load(None)
     thresholds = Thresholds(**model["training_metadata"]["scope"].get("thresholds", {}))
+    today_ict = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+    target_dates = [today_ict, today_ict + timedelta(days=1)]
     updated = 0
-    for loc_code in locations:
-        try:
-            payload = NextDayRequest(location=loc_code)
-            target, issued, location, features = inference_input(payload, model)
-            raw_label, raw_probabilities = predict_class(artifact, features)
-            label, probabilities = calibrate_classification(loc_code, target, raw_label, raw_probabilities, thresholds)
-            save_next_day("classification", model["id"], target, issued, location, label, probabilities)
-            updated += 1
-        except Exception as exc:
-            logger.warning("Auto-classification skipped for %s: %s", loc_code, exc)
-    logger.info("Auto-refresh XGBoost rainfall classification completed for %d locations", updated)
+    for t_date in target_dates:
+        for loc_code in locations:
+            try:
+                payload = NextDayRequest(location=loc_code, target_date=t_date)
+                target, issued, location, features = inference_input(payload, model)
+                raw_label, raw_probabilities = predict_class(artifact, features)
+                label, probabilities = calibrate_classification(loc_code, target, raw_label, raw_probabilities, thresholds)
+                save_next_day("classification", model["id"], target, issued, location, label, probabilities)
+                updated += 1
+            except Exception as exc:
+                logger.warning("Auto-classification skipped for %s (%s): %s", loc_code, t_date, exc)
+    logger.info("Auto-refresh XGBoost rainfall classification completed (%d records)", updated)
 
 
 async def _auto_refresh_loop(app: FastAPI, interval_seconds: int) -> None:
