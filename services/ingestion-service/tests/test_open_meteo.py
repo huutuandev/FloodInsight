@@ -24,7 +24,7 @@ def test_provider_retries_and_validates_recorded_response(monkeypatch):
 
     async def run():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            return await open_meteo.OpenMeteoClient(http, Settings(forecast_hours=2)).fetch()
+            return await open_meteo.OpenMeteoClient(http, Settings(past_hours=0, forecast_hours=2)).fetch()
 
     snapshots = asyncio.run(run())
     assert len(requests) == 2
@@ -47,7 +47,7 @@ def test_provider_rejects_malformed_hourly_series(monkeypatch):
     async def run():
         transport = httpx.MockTransport(lambda request: httpx.Response(200, json=payload))
         async with httpx.AsyncClient(transport=transport) as http:
-            await open_meteo.OpenMeteoClient(http, Settings(forecast_hours=2)).fetch()
+            await open_meteo.OpenMeteoClient(http, Settings(past_hours=0, forecast_hours=2)).fetch()
 
     with pytest.raises(open_meteo.ProviderError, match="invalid Open-Meteo response"):
         asyncio.run(run())
@@ -62,7 +62,7 @@ def test_provider_bounds_request_duration(monkeypatch):
     async def run():
         transport = httpx.MockTransport(delayed_response)
         async with httpx.AsyncClient(transport=transport) as http:
-            settings = Settings(forecast_hours=2, timeout_seconds=0.02, max_attempts=1)
+            settings = Settings(past_hours=0, forecast_hours=2, timeout_seconds=0.02, max_attempts=1)
             await open_meteo.OpenMeteoClient(http, settings).fetch()
 
     with pytest.raises(open_meteo.ProviderError, match="timed out"):

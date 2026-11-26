@@ -1,6 +1,8 @@
 import asyncio
 import logging
 
+import httpx
+
 from ..repositories.ingestion import IngestionBusy, IngestionRepository
 from ..schemas.ingestion import RunSummary, Trigger
 from .open_meteo import OpenMeteoClient, ProviderError
@@ -31,7 +33,38 @@ class IngestionService:
                 await self.repository.finish(conn, run_id, "failed", 0, "Storage failed")
                 raise
             logger.info("Open-Meteo run %s added %s snapshots", run_id, result.records_inserted)
+            await self.refresh_assessments()
             return result
+
+    async def refresh_assessments(self) -> None:
+        url = self.provider.settings.prediction_url
+        if url is None:
+            return
+        try:
+            base = str(url).rstrip("/")
+            response = await self.provider.http.post(f"{base}/flood-risk/generate", json={}, timeout=30)
+            response.raise_for_status()
+            assessments = response.json()
+            logger.info("Flood assessment refresh: %s scored of %s points",
+                        sum(row["risk_index"] is not None for row in assessments), len(assessments))
+            metrics = await self.provider.http.get(f"{base}/flood-prediction/metrics")
+            metrics.raise_for_status()
+            if metrics.json().get("status") == "approved":
+                for row in assessments:
+                    prediction = await self.provider.http.post(f"{base}/flood-prediction/predict",
+                                                               json={"location": row["location"]}, timeout=30)
+                    prediction.raise_for_status()
+        except (httpx.HTTPError, KeyError, ValueError):
+            logger.exception("Flood assessment or model refresh failed after weather was stored")
+
+    async def refresh_delayed_soil(self) -> None:
+        url = str(self.provider.settings.warehouse_url).rstrip("/")
+        try:
+            response = await self.provider.http.post(f"{url}/warehouse/flood-soil/refresh", timeout=120)
+            response.raise_for_status()
+            logger.info("Delayed soil archive refresh: %s", response.json())
+        except (httpx.HTTPError, ValueError):
+            logger.exception("Delayed soil archive refresh failed")
 
     async def scheduled_run(self) -> None:
         try:

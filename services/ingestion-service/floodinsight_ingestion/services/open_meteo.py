@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from ..config import Settings
 from ..schemas.ingestion import Snapshot
-from ..schemas.open_meteo import ForecastResponse, VARIABLE_UNITS
+from ..schemas.open_meteo import ForecastResponse, SOIL_UNITS, VARIABLE_UNITS
 from .locations import DANANG_POINTS, SamplingPoint
 
 
@@ -52,7 +52,8 @@ class OpenMeteoClient:
             "latitude": point.latitude,
             "longitude": point.longitude,
             "current": variables,
-            "hourly": variables,
+            "hourly": ",".join((*VARIABLE_UNITS, *SOIL_UNITS)),
+            "past_hours": self.settings.past_hours,
             "temperature_unit": "celsius",
             "wind_speed_unit": "ms",
             "precipitation_unit": "mm",
@@ -82,7 +83,7 @@ class OpenMeteoClient:
                     forecast = ForecastResponse.model_validate_json(response.content)
                 except ValidationError as error:
                     raise ProviderError(f"{point.code}: invalid Open-Meteo response") from error
-                if len(forecast.hourly.time) != self.settings.forecast_hours:
+                if len(forecast.hourly.time) != self.settings.forecast_hours + self.settings.past_hours:
                     raise ProviderError(f"{point.code}: incomplete hourly series")
                 return to_snapshots(point, forecast, received_at)
 
@@ -110,7 +111,8 @@ def to_snapshots(
             location_code=point.code,
             valid_at=datetime.fromtimestamp(epoch, timezone.utc),
             received_at=received_at,
-            payload=context | {"kind": kind, "interval_seconds": interval, "values": measurements},
+            payload=context | {"kind": kind, "interval_seconds": interval, "values": measurements,
+                               "units": VARIABLE_UNITS | {key: SOIL_UNITS[key] for key in measurements if key in SOIL_UNITS}},
         )
 
     current = forecast.current
@@ -123,8 +125,9 @@ def to_snapshots(
         )
     ]
     hourly = forecast.hourly
+    keys = (*VARIABLE_UNITS, *(key for key in SOIL_UNITS if getattr(hourly, key) is not None))
     rows.extend(
-        snapshot("hourly", valid_at, 3600, {key: getattr(hourly, key)[i] for key in VARIABLE_UNITS})
+        snapshot("hourly", valid_at, 3600, {key: getattr(hourly, key)[i] for key in keys})
         for i, valid_at in enumerate(hourly.time)
     )
     return rows

@@ -1,6 +1,6 @@
 """Versioned experimental flood assessments and their stored evidence."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -67,8 +67,12 @@ def create_assessment(payload: RiskRequest, request: Request):
 @router.post("/generate", response_model=list[Assessment])
 @warehouse_errors
 def generate(payload: GenerateRequest, request: Request):
+    now = datetime.now(timezone.utc).replace(microsecond=0)
     try:
-        issuance = resolve_issuance(payload.issued_at)
+        evidence_at = payload.issued_at.astimezone(timezone.utc) if payload.issued_at else now
+        if evidence_at > now:
+            raise ValueError("Assessment issuance cannot be in the future")
+        issuance = resolve_issuance(None, now=evidence_at)
     except ValueError as exc:
         raise DataUnavailable(str(exc)) from exc
     config = request.app.state.risk_config
@@ -79,12 +83,13 @@ def generate(payload: GenerateRequest, request: Request):
             raise HTTPException(404, "Unknown monitoring point")
         results = [
             (locations[row["location"]], jsonable_encoder(assess(row, config) | {"sensitivity": sensitivity(row, config)}))
-            for row in current_features(conn, issuance) if payload.location is None or row["location"] == payload.location
+            for row in current_features(conn, issuance, modeled_recent=True, evidence_at=evidence_at) if payload.location is None or row["location"] == payload.location
         ]
     config_json = config.model_dump(mode="json")
     # The evidence read has a fixed snapshot. Use a fresh transaction for concurrent replay.
     with connect() as conn:
-        return [store_assessment(conn, (location_id, issuance, config.version, digest(result)), result, config_json)
+        return [store_assessment(conn, (location_id, evidence_at, result["method_version"], digest(result)), result,
+                                 config_json | {"version": result["method_version"]})
                 for location_id, result in results]
 
 
@@ -104,7 +109,7 @@ def store_assessment(conn, key, result, config_json):
                 WHERE location_id = %s AND issued_at = %s AND method_version = %s AND evidence_sha256 = %s
             """, key).fetchone()
     return result | {"id": stored["id"], "created_at": stored["created_at"],
-                     "valid_until": key[1] + timedelta(hours=result["forecast_horizon_hours"])}
+                     "valid_until": result["target_end"]}
 
 
 @router.get("/assessments")
@@ -115,7 +120,7 @@ def assessments(location: Annotated[Location | None, Query()] = None,
     with connect() as conn:
         rows = conn.execute("""
             SELECT a.id, a.created_at, a.result,
-                   a.issued_at + a.horizon_hours * interval '1 hour' AS valid_until FROM flood_risk_assessments a
+                   coalesce((a.result->>'target_end')::timestamptz, a.issued_at + a.horizon_hours * interval '1 hour') AS valid_until FROM flood_risk_assessments a
             JOIN dim_location l ON a.location_id = l.id
             WHERE (%s::text IS NULL OR l.code = %s) ORDER BY a.issued_at DESC, a.id DESC LIMIT %s
         """, (location, location, limit)).fetchall()
@@ -123,7 +128,9 @@ def assessments(location: Annotated[Location | None, Query()] = None,
 
 
 def stored_result(row):
-    return row["result"] | {key: row[key] for key in ("id", "created_at", "valid_until")}
+    return row["result"] | {"validation_status": "experimental_heuristic_unvalidated"} | {
+        key: row[key] for key in ("id", "created_at", "valid_until")
+    }
 
 
 @router.get("/locations", response_model=list[Point])
@@ -137,12 +144,16 @@ def latest_rows(location=None):
     with connect() as conn:
         rows = conn.execute("""
             SELECT l.code, l.name, l.latitude::float8, l.longitude::float8,
-                   a.id, a.created_at, a.result, a.issued_at + a.horizon_hours * interval '1 hour' AS valid_until,
-                   coalesce(a.issued_at <= now() AND a.issued_at + a.horizon_hours * interval '1 hour' > now(), false)
+                   a.id, a.created_at, a.result, a.valid_until,
+                   coalesce(a.issued_at <= now() AND a.valid_until > now()
+                     AND coalesce((a.result->'data_freshness'->'forecast_rain_next_24h_mm'->>'available_at')::timestamptz
+                                  + interval '6 hours' > now(), true), false)
                        AS is_current
             FROM dim_location l
             LEFT JOIN LATERAL (
-                SELECT id, result, created_at, issued_at, horizon_hours FROM flood_risk_assessments
+                SELECT id, result, created_at, issued_at,
+                       coalesce((result->>'target_end')::timestamptz, issued_at + horizon_hours * interval '1 hour') AS valid_until
+                FROM flood_risk_assessments
                 WHERE location_id = l.id AND issued_at <= now() ORDER BY issued_at DESC, id DESC LIMIT 1
             ) a ON true
             WHERE (%s::text IS NULL OR l.code = %s) ORDER BY l.name

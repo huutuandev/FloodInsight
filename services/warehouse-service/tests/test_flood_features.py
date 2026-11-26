@@ -69,8 +69,11 @@ class TestFloodFeatures(TestCase):
         self.assertEqual(make_row(POINT, ISSUE, ISSUE + TARGET, "operational",
                                   inputs)["features"]["forecast_rain_next_24h_mm"], 24)
         partial = late[0] | {"received_at": ISSUE}
-        self.assertIsNone(make_row(POINT, ISSUE, ISSUE + TARGET, "operational",
-                                  EMPTY | {"forecast": early + [partial]})["features"]["forecast_rain_next_6h_mm"])
+        fallback = make_row(POINT, ISSUE, ISSUE + TARGET, "operational", EMPTY | {"forecast": early + [partial]})
+        self.assertEqual(fallback["features"]["forecast_rain_next_6h_mm"], 6)
+        no_complete_run = make_row(POINT, ISSUE, ISSUE + TARGET, "operational",
+                                   EMPTY | {"forecast": early[1:] + [partial]})
+        self.assertIsNone(no_complete_run["features"]["forecast_rain_next_6h_mm"])
 
     def test_positive_requires_closed_horizon_link_matching_space_and_time(self):
         self.assertEqual(target(POINT, [observation()], ISSUE, ISSUE + TARGET)["value"], 1)

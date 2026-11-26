@@ -191,6 +191,7 @@ def main():
     raster = commands.add_parser("raster")
     raster.add_argument("dataset", choices=("copernicus-dem", "worldcover"))
     raster.add_argument("path", type=Path)
+    raster.add_argument("--south-tile", action="store_true", help="Use Copernicus DEM tile N15 E108")
     raster.add_argument("--dry-run", action="store_true")
     commands.add_parser("audit")
     args = parser.parse_args()
@@ -200,7 +201,9 @@ def main():
         with httpx.Client(timeout=30.0) as client:
             batches = list(collect(client, args.dataset, args.start, args.end))
     elif args.command == "raster":
-        batches = [raster_batch(args.dataset, args.path)]
+        if args.south_tile and args.dataset != "copernicus-dem":
+            parser.error("--south-tile requires copernicus-dem")
+        batches = [raster_batch(args.dataset, args.path, south_tile=args.south_tile)]
     if args.command != "audit":
         summary = {"dataset": args.dataset, "batches": [
             batch["metadata"] | {"validated_rows": len(batch["rows"]), "source_ref": batch["source_ref"],

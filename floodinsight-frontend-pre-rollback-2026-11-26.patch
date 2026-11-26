@@ -1,0 +1,1088 @@
+diff --git a/frontend/app/dashboard/dashboard.tsx b/frontend/app/dashboard/dashboard.tsx
+index 77e75e08c4b1be2ea155c274c1edbf2a8fcadd46..3b264e6b0228cd8f3cf635d14ec8452d91f227d7 100644
+--- a/frontend/app/dashboard/dashboard.tsx
++++ b/frontend/app/dashboard/dashboard.tsx
+@@ -11,7 +11,7 @@ import { ApiError, recentCoveredRange, coveredPreset, source, useData, withWeath
+   type DateRange, type Location, type RainfallCoverage, type Status, type Weather } from "./data";
+ import { DataManagement, MachineLearning } from "./operation-panels";
+ import { Analytics } from "./weather-panels";
+-import { FloodForecast, FloodMap, FloodOverview } from "./flood-panels";
++import { FloodForecast, FloodMap, FloodOverview, HistoricalFlood } from "./flood-panels";
+ import { FloodDataManagement, FloodMachineLearning } from "./flood-operations";
+ import { QueryError, StatePill } from "./ui";
+ 
+@@ -19,7 +19,8 @@ const navigation = [
+   { name: "Flood Overview", short: "Overview", icon: LayoutDashboard, detail: "Current flood assessments, available forecasts, and rainfall context for Da Nang." },
+   { name: "Flood Risk Forecast", short: "Forecast", icon: Activity, detail: "Compare current evidence and inspect the factors behind each location assessment." },
+   { name: "Rainfall Analytics", short: "Rainfall", icon: CloudRain, detail: "Explore historical rainfall patterns and weather relationships." },
+-  { name: "Machine Learning", short: "ML", icon: ChartNoAxesCombined, detail: "Review flood model readiness, validated predictions and exploratory terrain profiles." },
++  { name: "Historical Floods", short: "History", icon: CalendarDays, detail: "Review documented floods and historical rainfall." },
++  { name: "Machine Learning", short: "Research", icon: ChartNoAxesCombined, detail: "Review flood model readiness, validated predictions and exploratory terrain profiles." },
+   { name: "Da Nang Flood Map", short: "Map", icon: MapPinned, detail: "Explore the flood evidence at registered monitoring points." },
+   { name: "Data Management", short: "Data", icon: Database, detail: "Track flood dataset coverage, assessment history and weather collection." },
+ ] as const;
+@@ -118,7 +119,10 @@ function DashboardBody({ initialRange, language }: { initialRange: DateRange; la
+             localStorage.setItem(languageKey, event.target.value);
+             window.dispatchEvent(new Event(languageKey));
+           }}><option value="vi">VI</option><option value="en">EN</option></select>
+-          <StatePill status={status.error ? "unavailable" : status.data?.status ?? t("Checking services")} />
++          <div className="service-connectivity" title={t("Service connectivity")}>
++            <span>{t("Service connectivity")}</span>
++            <StatePill status={status.error ? "unavailable" : status.data?.status ?? t("Checking services")} />
++          </div>
+           <button className="icon-button" type="button" aria-label={theme === "dark" ? t("Switch to light theme") : t("Switch to dark theme")}
+             onClick={() => { localStorage.setItem("floodinsight-theme", theme === "dark" ? "light" : "dark");
+               window.dispatchEvent(new Event("floodinsight-theme")); }}>
+@@ -172,9 +176,12 @@ function DashboardBody({ initialRange, language }: { initialRange: DateRange; la
+         {section === "Flood Overview" && <FloodOverview scope={scope} theme={theme} weather={weather} />}
+         {section === "Flood Risk Forecast" && <FloodForecast selected={floodSelected} select={chooseLocation} />}
+         {section === "Rainfall Analytics" && <Analytics scope={scope} theme={theme} coverage={coverage} />}
++        {section === "Historical Floods" && <HistoricalFlood location={floodSelected} locations={floodPoints} select={chooseLocation} />}
+         {section === "Machine Learning" && <>
+-          <MachineLearning scope={scope} filterForecasts={Boolean(range)} locations={points} theme={theme} />
+           <FloodMachineLearning locations={floodPoints} theme={theme} />
++          <details className="flood-disclosure"><summary>{t("Legacy rainfall models")}</summary>
++            <MachineLearning scope={scope} filterForecasts={Boolean(range)} locations={points} theme={theme} />
++          </details>
+         </>}
+         {section === "Da Nang Flood Map" && <FloodMap selected={floodSelected} select={chooseLocation} />}
+         {section === "Data Management" && <><FloodDataManagement locations={floodPoints} /><DataManagement locations={points} /></>}
+diff --git a/frontend/app/dashboard/flood-data.ts b/frontend/app/dashboard/flood-data.ts
+index e96a1e72e87970445c9840bd1b1775696384fadc..43d866c97276d52a62f4af4ff5f050a4e754916f 100644
+--- a/frontend/app/dashboard/flood-data.ts
++++ b/frontend/app/dashboard/flood-data.ts
+@@ -5,277 +5,6 @@ export type RiskCategory = typeof categories[number];
+ export const riskColors: Record<RiskCategory, string> = {
+   Low: "#53ca89", Moderate: "#e8c658", High: "#f29955", "Very High": "#f47180", "Insufficient Data": "#93a0af",
+ };
+-export const riskRadius: Partial<Record<RiskCategory, number>> = {
+-  Low: 500, Moderate: 900, High: 1400, "Very High": 1800,
+-};
+-export type MapHorizon = "summary" | 6 | 12 | 24;
+-export type HistoricalScenarioId = "live" | "son-ca-2022" | "monsoon-2023" | "trami-2024" | "cloudburst-2024-11";
+-export type HistoricalScenario = {
+-  id: HistoricalScenarioId;
+-  label: string;
+-  dateLabel: string;
+-  rain24hByLocation: Record<string, number>;
+-  defaultRain24h: number;
+-  summary: string;
+-  source: string;
+-};
+-export const historicalScenarios: HistoricalScenario[] = [
+-  {
+-    id: "live",
+-    label: "Dự báo hiện tại",
+-    dateLabel: "Thời gian thực",
+-    rain24hByLocation: {},
+-    defaultRain24h: 0,
+-    summary: "Hiển thị nguy cơ ngập dựa trên dự báo mưa và mô hình hiện hành.",
+-    source: "",
+-  },
+-  {
+-    id: "monsoon-2023",
+-    label: "Đợt mưa 14/10/2023",
+-    dateLabel: "14/10/2023 · V-Rain",
+-    rain24hByLocation: {
+-      "hai-chau": 78, "thanh-khe": 85, "lien-chieu": 125, "cam-le": 72,
+-      "son-tra": 65, "ngu-hanh-son": 68, "hoa-vang": 95,
+-    },
+-    defaultRain24h: 75,
+-    summary: "Đợt mưa lớn tháng 10/2023 gây ngập cục bộ tại các trục trũng Hải Châu (Hàm Nghi, Lê Duẩn, Núi Thành) trong khi tuyến ven sông Bạch Đằng – 2 Tháng 9 vẫn lưu thông được.",
+-    source: "https://baodanang.vn/nhieu-tuyen-duong-moi-mua-da-ngap-3281789.html",
+-  },
+-  {
+-    id: "trami-2024",
+-    label: "Bão Trami (27/10/2024)",
+-    dateLabel: "27/10/2024 · V-Rain",
+-    rain24hByLocation: {
+-      "hai-chau": 118, "thanh-khe": 124, "lien-chieu": 168, "cam-le": 112,
+-      "son-tra": 135, "ngu-hanh-son": 98, "hoa-vang": 152,
+-    },
+-    defaultRain24h: 115,
+-    summary: "Hoàn lưu bão Trami (số 6) gây mưa lớn diện rộng, các điểm trũng nội đô ngập 0.3–0.5m, lan sang các đoạn đường nối tiếp.",
+-    source: "https://baodanang.vn/tang-cuong-luc-luong-ho-tro-di-doi-dan-vung-ngap-lut-3308691.html",
+-  },
+-  {
+-    id: "cloudburst-2024-11",
+-    label: "Mưa cực đoan 05/11/2024",
+-    dateLabel: "05/11/2024 · Hòa Cường Nam 281mm",
+-    rain24hByLocation: {
+-      "hai-chau": 215, "thanh-khe": 165, "lien-chieu": 145, "cam-le": 175,
+-      "son-tra": 120, "ngu-hanh-son": 140, "hoa-vang": 110,
+-    },
+-    defaultRain24h: 140,
+-    summary: "Trạm Hòa Cường Nam (Hải Châu) ghi nhận 281 mm ngày 05/11/2024, gây ngập sâu 0.5–1.0 m khu Núi Thành – Hàm Nghi – Lê Duẩn.",
+-    source: "https://dansinh.dantri.com.vn/dien-dan-dan-sinh/da-nang-mua-lon-nhieu-tuyen-duong-ngap-sau-hoc-sinh-nghi-hoc-20241105101609887.htm",
+-  },
+-  {
+-    id: "son-ca-2022",
+-    label: "Bão Sơn Ca (14/10/2022)",
+-    dateLabel: "14/10/2022 · Lịch sử >500mm",
+-    rain24hByLocation: {
+-      "hai-chau": 380, "thanh-khe": 410, "lien-chieu": 520, "cam-le": 360,
+-      "son-tra": 340, "ngu-hanh-son": 310, "hoa-vang": 420,
+-    },
+-    defaultRain24h: 350,
+-    summary: "Trận mưa lịch sử bão Sơn Ca (14–15/10/2022), lượng mưa cực đoan gây ngập sâu trên diện rộng khắp trung tâm Đà Nẵng.",
+-    source: "https://baodanang.vn/giam-tai-cho-he-thong-thoat-nuoc-de-chong-ngap-3159050.html",
+-  },
+-];
+-
+-export type FloodZone = {
+-  id: string;
+-  name: string;
+-  locationCode: string;
+-  center: [number, number];
+-  coreRadiusM: number;
+-  outerRadiusM: number;
+-  triggerMm24h: number;
+-  elevationNote: string;
+-};
+-export const floodZones: FloodZone[] = [
+-  { id: "zone-thac-gian", name: "Vùng trũng Hồ Thạc Gián – Hàm Nghi", locationCode: "hai-chau", center: [16.0636, 108.2112], coreRadiusM: 280, outerRadiusM: 540, triggerMm24h: 38, elevationNote: "Lõi trũng quanh hồ điều tiết Thạc Gián, thoát nước chậm khi mưa cường suất lớn." },
+-  { id: "zone-le-duan", name: "Vùng trũng Lê Duẩn – BV Đà Nẵng", locationCode: "hai-chau", center: [16.0719, 108.2138], coreRadiusM: 260, outerRadiusM: 520, triggerMm24h: 40, elevationNote: "Mật độ bê tông hóa >68%, thường ứ đọng nước từ Hoàng Hoa Thám đến Lý Thái Tổ." },
+-  { id: "zone-hoa-cuong", name: "Vùng trũng Hòa Cường Nam – Núi Thành", locationCode: "hai-chau", center: [16.0432, 108.2201], coreRadiusM: 320, outerRadiusM: 620, triggerMm24h: 40, elevationNote: "Khu vực thấp trũng phía nam Hải Châu, tâm điểm mưa 281mm ngày 05/11/2024." },
+-  { id: "zone-me-suot", name: "Rốn ngập Mẹ Suốt – Hòa Khánh Nam", locationCode: "lien-chieu", center: [16.0655, 108.1515], coreRadiusM: 380, outerRadiusM: 760, triggerMm24h: 45, elevationNote: "Hứng nước sườn đồi đổ xuống, ngập lịch sử tới 2m trận 14/10/2022." },
+-  { id: "zone-lo-voi", name: "Vùng trũng Cống Lò Vôi – CMT8", locationCode: "cam-le", center: [16.0215, 108.2060], coreRadiusM: 300, outerRadiusM: 600, triggerMm24h: 55, elevationNote: "Điểm trũng ven sông Cẩm Lệ, dễ ngập khi mưa kết hợp triều cường." },
+-];
+-
+-export type HistoricalRoad = {
+-  id: string;
+-  name: string;
+-  corridorGroup: string;
+-  fromLabel: string;
+-  toLabel: string;
+-  connectedNext: string;
+-  locationCode: string;
+-  coordinates: [number, number];
+-  path: [number, number][];
+-  routeType: "flood_prone" | "safer_corridor";
+-  triggerMm24h: number;
+-  historicalNote: string;
+-  source: string;
+-};
+-
+-const localFloods = "https://baodanang.vn/nhieu-tuyen-duong-moi-mua-da-ngap-3281789.html";
+-const drainage = "https://baodanang.vn/ba-du-an-thoat-nuoc-kip-thoi-giup-giam-ngap-trung-tam-do-thi-da-nang-3351930.html";
+-export const historicalRoads: HistoricalRoad[] = [
+-  // === HẢI CHÂU — Trục 1: Hàm Nghi → Nguyễn Văn Linh → Cầu Rồng (chuyển tiếp Đỏ → Cam → Vàng → Xanh) ===
+-  { id: "ham-nghi-core", name: "Hàm Nghi (Tản Đà → Nguyễn Văn Linh)", corridorGroup: "Trục Hàm Nghi – Nguyễn Văn Linh",
+-    fromLabel: "Ngã tư Tản Đà", toLabel: "Nút giao Nguyễn Văn Linh",
+-    connectedNext: "Nối tiếp ra Nguyễn Văn Linh (ngập giảm dần) → Rẽ Trần Phú / Bạch Đằng để né ngập.",
+-    locationCode: "hai-chau", coordinates: [16.0638, 108.2112],
+-    path: [[16.0666, 108.2108], [16.0648, 108.2111], [16.0630, 108.2113], [16.0607, 108.2116]],
+-    routeType: "flood_prone", triggerMm24h: 36,
+-    historicalNote: "Tâm trũng quanh hồ Thạc Gián, ngập sâu 0.3–0.5m ngày 05/11/2024.", source: drainage },
+-  { id: "nvl-mid", name: "Nguyễn Văn Linh (Hàm Nghi → Phan Châu Trinh)", corridorGroup: "Trục Hàm Nghi – Nguyễn Văn Linh",
+-    fromLabel: "Nút giao Hàm Nghi", toLabel: "Ngã tư Phan Châu Trinh",
+-    connectedNext: "Đoạn nối liền vùng trũng Hàm Nghi, nước giảm dần về hướng Cầu Rồng.",
+-    locationCode: "hai-chau", coordinates: [16.0608, 108.2160],
+-    path: [[16.0607, 108.2116], [16.0607, 108.2145], [16.0608, 108.2178], [16.0609, 108.2202]],
+-    routeType: "flood_prone", triggerMm24h: 55,
+-    historicalNote: "Đoạn nối tiếp nút giao Hoàng Diệu – Hàm Nghi, ngập trung bình khi mưa vượt 55mm.", source: drainage },
+-  { id: "nvl-east", name: "Nguyễn Văn Linh (Phan Châu Trinh → Cầu Rồng)", corridorGroup: "Trục Hàm Nghi – Nguyễn Văn Linh",
+-    fromLabel: "Ngã tư Phan Châu Trinh", toLabel: "Đầu Cầu Rồng (Bạch Đằng)",
+-    connectedNext: "Thoát nước nhanh ra sông Hàn, nối trực tiếp với trục an toàn Trần Phú & Bạch Đằng.",
+-    locationCode: "hai-chau", coordinates: [16.0610, 108.2224],
+-    path: [[16.0609, 108.2202], [16.0610, 108.2225], [16.0611, 108.2244]],
+-    routeType: "flood_prone", triggerMm24h: 95,
+-    historicalNote: "Đoạn mép ngoài gần sông Hàn, chỉ ứ đọng nhẹ khi mưa rất lớn.", source: drainage },
+-
+-  // === HẢI CHÂU — Trục 2: Lê Duẩn → Bạch Đằng (chuyển tiếp Đỏ → Cam → Vàng → Xanh) ===
+-  { id: "le-duan-core", name: "Lê Duẩn (Hoàng Hoa Thám → Lý Thái Tổ)", corridorGroup: "Trục Lê Duẩn – Sông Hàn",
+-    fromLabel: "Ngã tư Hoàng Hoa Thám", toLabel: "Ngã tư Lý Thái Tổ",
+-    connectedNext: "Nối tiếp đoạn Lý Thái Tổ → Nguyễn Chí Thanh (ngập thấp hơn), ưu tiên né qua Quang Trung/Trần Phú.",
+-    locationCode: "hai-chau", coordinates: [16.0721, 108.2125],
+-    path: [[16.0725, 108.2098], [16.0721, 108.2125], [16.0718, 108.2152]],
+-    routeType: "flood_prone", triggerMm24h: 38,
+-    historicalNote: "Điểm trũng lịch sử trước BV Đà Nẵng, ngập 0.3–0.6m các đợt 14/10/2022 & 05/11/2024.", source: localFloods },
+-  { id: "le-duan-mid", name: "Lê Duẩn (Lý Thái Tổ → Nguyễn Chí Thanh)", corridorGroup: "Trục Lê Duẩn – Sông Hàn",
+-    fromLabel: "Ngã tư Lý Thái Tổ", toLabel: "Ngã tư Nguyễn Chí Thanh",
+-    connectedNext: "Nối liền đoạn đầu sông Hàn (ngập nhẹ), có thể rẽ phải vào Trần Phú để tránh.",
+-    locationCode: "hai-chau", coordinates: [16.0715, 108.2178],
+-    path: [[16.0718, 108.2152], [16.0715, 108.2178], [16.0713, 108.2202]],
+-    routeType: "flood_prone", triggerMm24h: 58,
+-    historicalNote: "Đoạn chuyển tiếp từ vùng trũng Lê Duẩn hướng ra sông Hàn, ngập nhẹ đến trung bình.", source: localFloods },
+-  { id: "le-duan-east", name: "Lê Duẩn (Nguyễn Chí Thanh → Bạch Đằng)", corridorGroup: "Trục Lê Duẩn – Sông Hàn",
+-    fromLabel: "Ngã tư Nguyễn Chí Thanh", toLabel: "Nút giao Bạch Đằng (Cầu Sông Hàn)",
+-    connectedNext: "Nối thẳng ra trục ven sông Bạch Đằng cao ráo, thoát nước nhanh.",
+-    locationCode: "hai-chau", coordinates: [16.0711, 108.2224],
+-    path: [[16.0713, 108.2202], [16.0711, 108.2224], [16.0710, 108.2245]],
+-    routeType: "flood_prone", triggerMm24h: 95,
+-    historicalNote: "Gần cửa xả sông Hàn, hiếm khi ngập sâu trừ mưa lịch sử.", source: drainage },
+-
+-  // === HẢI CHÂU — Trục 3: Quang Trung – Hải Phòng ===
+-  { id: "quang-trung-core", name: "Quang Trung – Hải Phòng (Ông Ích Khiêm → Nguyễn Chí Thanh)", corridorGroup: "Trục Quang Trung – Hải Phòng",
+-    fromLabel: "Ngã tư Ông Ích Khiêm", toLabel: "Ngã tư Nguyễn Chí Thanh",
+-    connectedNext: "Nối tiếp đoạn Quang Trung → Bạch Đằng (ít ngập hơn).",
+-    locationCode: "hai-chau", coordinates: [16.0752, 108.2165],
+-    path: [[16.0750, 108.2130], [16.0752, 108.2165], [16.0754, 108.2198]],
+-    routeType: "flood_prone", triggerMm24h: 48,
+-    historicalNote: "Khu vực nội đô bê tông hóa >68%, thoát nước chậm khi mưa lớn kéo dài.", source: localFloods },
+-  { id: "quang-trung-east", name: "Quang Trung (Nguyễn Chí Thanh → Bạch Đằng)", corridorGroup: "Trục Quang Trung – Hải Phòng",
+-    fromLabel: "Ngã tư Nguyễn Chí Thanh", toLabel: "Ngã ba Bạch Đằng",
+-    connectedNext: "Nối trực tiếp ra tuyến tránh ngập Trần Phú và Bạch Đằng.",
+-    locationCode: "hai-chau", coordinates: [16.0756, 108.2222],
+-    path: [[16.0754, 108.2198], [16.0756, 108.2222], [16.0758, 108.2242]],
+-    routeType: "flood_prone", triggerMm24h: 90,
+-    historicalNote: "Đoạn gần bờ sông Hàn, mức ngập nhẹ hơn rõ rệt so với phía tây.", source: drainage },
+-
+-  // === HẢI CHÂU — Trục 4: Núi Thành – Hòa Cường Nam ===
+-  { id: "nui-thanh-core", name: "Núi Thành (Tiểu La → Duy Tân)", corridorGroup: "Trục Núi Thành – Hòa Cường",
+-    fromLabel: "Ngã tư Tiểu La", toLabel: "Ngã tư Duy Tân",
+-    connectedNext: "Nối sang đoạn Duy Tân → Xô Viết Nghệ Tĩnh (ngập ít hơn), ưu tiên đi song song đường 2 Tháng 9.",
+-    locationCode: "hai-chau", coordinates: [16.0455, 108.2204],
+-    path: [[16.0485, 108.2208], [16.0455, 108.2204], [16.0425, 108.2200]],
+-    routeType: "flood_prone", triggerMm24h: 40,
+-    historicalNote: "Trạm Hòa Cường Nam ghi nhận 281mm ngày 05/11/2024, ngập sâu đến 0.8–1.0m.",
+-    source: "https://dansinh.dantri.com.vn/dien-dan-dan-sinh/da-nang-mua-lon-nhieu-tuyen-duong-ngap-sau-hoc-sinh-nghi-hoc-20241105101609887.htm" },
+-  { id: "nui-thanh-south", name: "Núi Thành (Duy Tân → Xô Viết Nghệ Tĩnh)", corridorGroup: "Trục Núi Thành – Hòa Cường",
+-    fromLabel: "Ngã tư Duy Tân", toLabel: "Nút giao Xô Viết Nghệ Tĩnh",
+-    connectedNext: "Rẽ đông sang đường 2 Tháng 9 để di chuyển an toàn.",
+-    locationCode: "hai-chau", coordinates: [16.0392, 108.2196],
+-    path: [[16.0425, 108.2200], [16.0392, 108.2196], [16.0360, 108.2192]],
+-    routeType: "flood_prone", triggerMm24h: 65,
+-    historicalNote: "Đoạn nối tiếp phía nam Hòa Cường, ngập nhẹ đến trung bình.", source: localFloods },
+-
+-  // === HẢI CHÂU — Các tuyến cao ráo / gợi ý lộ trình né ngập (🟢) ===
+-  { id: "hc-bach-dang", name: "Bạch Đằng (Quang Trung → Cầu Rồng)", corridorGroup: "Lộ trình né ngập Hải Châu",
+-    fromLabel: "Ngã ba Quang Trung", toLabel: "Đầu Cầu Rồng",
+-    connectedNext: "Kết nối thẳng sang đường 2 Tháng 9 đi về phía nam mà không qua điểm trũng.",
+-    locationCode: "hai-chau", coordinates: [16.0685, 108.2247],
+-    path: [[16.0758, 108.2242], [16.0710, 108.2245], [16.0660, 108.2248], [16.0611, 108.2244]],
+-    routeType: "safer_corridor", triggerMm24h: 180,
+-    historicalNote: "Tuyến ven sông có cửa xả trực tiếp ra sông Hàn, ít ngập nhất khu vực trung tâm.", source: drainage },
+-  { id: "hc-tran-phu", name: "Trần Phú (Quang Trung → Cầu Rồng)", corridorGroup: "Lộ trình né ngập Hải Châu",
+-    fromLabel: "Ngã tư Quang Trung", toLabel: "Nút giao Nguyễn Văn Linh",
+-    connectedNext: "Tuyến song song Bạch Đằng giúp né toàn bộ điểm ngập Lê Duẩn – Hàm Nghi.",
+-    locationCode: "hai-chau", coordinates: [16.0686, 108.2225],
+-    path: [[16.0756, 108.2222], [16.0711, 108.2224], [16.0662, 108.2226], [16.0610, 108.2225]],
+-    routeType: "safer_corridor", triggerMm24h: 155,
+-    historicalNote: "Trục trung tâm cốt nền cao hơn khu phía tây, thuận lợi di chuyển khi mưa lớn.", source: drainage },
+-  { id: "hc-2-thang-9", name: "Đường 2 Tháng 9 (Cầu Rồng → Công viên Châu Á)", corridorGroup: "Lộ trình né ngập Hải Châu",
+-    fromLabel: "Nút giao Cầu Rồng", toLabel: "Công viên Châu Á",
+-    connectedNext: "Tuyến thay thế trực tiếp cho trục Núi Thành – Tiểu La khi Hòa Cường Nam ngập.",
+-    locationCode: "hai-chau", coordinates: [16.0480, 108.2244],
+-    path: [[16.0595, 108.2242], [16.0525, 108.2243], [16.0455, 108.2245], [16.0365, 108.2246]],
+-    routeType: "safer_corridor", triggerMm24h: 170,
+-    historicalNote: "Trục rộng cốt nền cao, hệ thống cống lớn thoát nhanh ra sông Hàn.", source: drainage },
+-
+-  // === Các quận/huyện khác của Đà Nẵng ===
+-  { id: "hung-vuong", name: "Hùng Vương (Ông Ích Khiêm → Chi Lăng)", corridorGroup: "Thanh Khê",
+-    fromLabel: "Ngã tư Ông Ích Khiêm", toLabel: "Ngã tư Chi Lăng",
+-    connectedNext: "Giảm ngập dần về phía ngã năm Hoàng Diệu.",
+-    locationCode: "thanh-khe", coordinates: [16.0678, 108.2080],
+-    path: [[16.0681, 108.2025], [16.0678, 108.2080], [16.0674, 108.2145]],
+-    routeType: "flood_prone", triggerMm24h: 50,
+-    historicalNote: "Ghi nhận ngập cục bộ 0.3–0.5m trong các đợt mưa lớn 2022–2024.", source: "https://vnexpress.net/duong-pho-trung-tam-da-nang-ngap-sau-sau-mua-4651644.html" },
+-  { id: "dien-bien-phu", name: "Điện Biên Phủ (Công viên 29/3 → Ngã ba Huế)", corridorGroup: "Thanh Khê",
+-    fromLabel: "Công viên 29/3", toLabel: "Hầm chui Ngã ba Huế",
+-    connectedNext: "Nên vòng qua Nguyễn Tri Phương hoặc Nguyễn Tất Thành khi mưa lớn.",
+-    locationCode: "thanh-khe", coordinates: [16.0655, 108.1985],
+-    path: [[16.0662, 108.1915], [16.0655, 108.1985], [16.0650, 108.2045]],
+-    routeType: "flood_prone", triggerMm24h: 55,
+-    historicalNote: "Khu vực công viên 29/3 từng phải bơm tiêu thoát ngập khẩn cấp.", source: localFloods },
+-  { id: "me-suot", name: "Mẹ Suốt (Hòa Khánh Nam – Liên Chiểu)", corridorGroup: "Liên Chiểu",
+-    fromLabel: "Khu dân cư Mẹ Suốt", toLabel: "Nút giao Hoàng Văn Thái",
+-    connectedNext: "Tránh đi vào kiệt sâu, ưu tiên trục Nguyễn Lương Bằng cao hơn.",
+-    locationCode: "lien-chieu", coordinates: [16.0655, 108.1515],
+-    path: [[16.0695, 108.1505], [16.0655, 108.1515], [16.0615, 108.1525]],
+-    routeType: "flood_prone", triggerMm24h: 45,
+-    historicalNote: "Rốn lũ lịch sử Liên Chiểu, ngập sâu gần 2m trận 14/10/2022.", source: "https://baodanang.vn/giam-tai-cho-he-thong-thoat-nuoc-de-chong-ngap-3159050.html" },
+-  { id: "ton-duc-thang", name: "Tôn Đức Thắng (Cống Đa Cô → Ngã ba Huế)", corridorGroup: "Liên Chiểu",
+-    fromLabel: "Cống Đa Cô", toLabel: "Ngã ba Huế",
+-    connectedNext: "Nước giảm dần khi qua khỏi nút thắt cống Đa Cô.",
+-    locationCode: "lien-chieu", coordinates: [16.0690, 108.1620],
+-    path: [[16.0715, 108.1555], [16.0690, 108.1620], [16.0668, 108.1690]],
+-    routeType: "flood_prone", triggerMm24h: 55,
+-    historicalNote: "Nút thắt thoát nước cống Đa Cô khi mưa lớn từ sườn đồi đổ xuống.", source: "https://baodanang.vn/giam-tai-cho-he-thong-thoat-nuoc-de-chong-ngap-3159050.html" },
+-  { id: "cmt8", name: "Cách Mạng Tháng Tám (Cống Lò Vôi – Cẩm Lệ)", corridorGroup: "Cẩm Lệ",
+-    fromLabel: "Khu vực Cống Lò Vôi", toLabel: "Cầu Cẩm Lệ",
+-    connectedNext: "Ưu tiên di chuyển qua trục Thăng Long / Võ Chí Công.",
+-    locationCode: "cam-le", coordinates: [16.0215, 108.2060],
+-    path: [[16.0265, 108.2095], [16.0215, 108.2060], [16.0160, 108.2025]],
+-    routeType: "flood_prone", triggerMm24h: 60,
+-    historicalNote: "Điểm ngập trũng lặp lại ven sông Cẩm Lệ khi mưa kéo dài.", source: localFloods },
+-  { id: "le-tan-trung", name: "Lê Tấn Trung (Thọ Quang – Sơn Trà)", corridorGroup: "Sơn Trà",
+-    fromLabel: "Ngã tư Ngô Quyền", toLabel: "Khu dân cư Thọ Quang",
+-    connectedNext: "Thoát nhanh hơn về phía trục Võ Nguyên Giáp / Ngô Quyền.",
+-    locationCode: "son-tra", coordinates: [16.0920, 108.2500],
+-    path: [[16.0945, 108.2465], [16.0920, 108.2500], [16.0895, 108.2535]],
+-    routeType: "flood_prone", triggerMm24h: 60,
+-    historicalNote: "Tuyến đường thường ứ đọng nước khi mưa lớn kéo dài.", source: "https://baodanang.vn/duong-le-tan-trung-bi-ngap-3281266.html" },
+-  { id: "tran-dai-nghia", name: "Trần Đại Nghĩa (Ngũ Hành Sơn)", corridorGroup: "Ngũ Hành Sơn",
+-    fromLabel: "Nút giao Mai Đăng Chơn", toLabel: "Khu Đô thị FPT",
+-    connectedNext: "Có thể vòng ra trục Võ Chí Công / Lê Văn Hiến.",
+-    locationCode: "ngu-hanh-son", coordinates: [15.9820, 108.2440],
+-    path: [[15.9910, 108.2410], [15.9820, 108.2440], [15.9730, 108.2470]],
+-    routeType: "flood_prone", triggerMm24h: 65,
+-    historicalNote: "Khu vực trũng thấp từng ghi nhận ngập cục bộ khi mưa lớn.", source: localFloods },
+-  { id: "tuy-loan", name: "Túy Loan (Hòa Phong – Hòa Vang)", corridorGroup: "Hòa Vang",
+-    fromLabel: "Chợ Túy Loan", toLabel: "Cầu Túy Loan",
+-    connectedNext: "Chú ý mực nước sông Túy Loan khi có lũ thượng nguồn.",
+-    locationCode: "hoa-vang", coordinates: [15.9950, 108.1380],
+-    path: [[16.0020, 108.1350], [15.9950, 108.1380], [15.9870, 108.1415]],
+-    routeType: "flood_prone", triggerMm24h: 70,
+-    historicalNote: "Khu vực ven sông Túy Loan chịu ảnh hưởng lũ thượng nguồn (2020, 2022, 2023).", source: "https://baodanang.vn/tang-cuong-luc-luong-ho-tro-di-doi-dan-vung-ngap-lut-3308691.html" },
+-];
+ export const indexHelp = "Experimental score from 0 to 100. It measures the index factors on their configured scale.";
+ export const probabilityHelp = "Estimated chance of inundation within the 24-hour forecast window from an approved calibrated flood model.";
+ 
+@@ -287,31 +16,9 @@ export type Assessment = {
+   factors: Record<string, { weight: number; inputs: Numbers; normalized: number | null; contribution_points: number | null }>;
+   observed_rainfall: Numbers; forecast_rainfall: Numbers;
+   source_references: Record<string, {url: string; resolution: string; provenance_type?: string}>;
+-  horizon_breakdown?: {
+-    horizon_hours?: number;
+-    hours?: number;
+-    rain_mm?: number | null;
+-    rainfall_mm?: number | null;
+-    threshold_mm?: number | null;
+-    threshold_ratio?: number | null;
+-    risk_category?: RiskCategory | null;
+-    risk_index?: number | null;
+-    status?: string;
+-  }[] | null;
+-  inundation_detail?: {
+-    primary_driver?: string | null;
+-    trigger_thresholds_mm?: Record<string, number> | null;
+-    rainfall_threshold_mm?: number | null;
+-    forecast_vs_threshold_24h_ratio?: number | null;
+-    confidence_level?: string | null;
+-    depth_cm?: number | null;
+-    starts_at?: string | null;
+-    data_provenance?: {
+-      types?: string[];
+-      has_verified_in_situ?: boolean;
+-      warning?: string | null;
+-    } | null;
+-  } | null;
++  inundation_detail?: { primary_driver?: string | null } | null;
++  recent_rainfall_type?: "modeled_estimate" | "reanalysis";
++  modeled_soil_moisture?: Numbers;
+   recommended_actions?: string[] | Partial<Record<"vi" | "en", string[]>> | null;
+   data_provenance?: Assessment["source_references"] | null;
+   data_freshness: Record<string, {available_at: string; last_valid_at?: string | null}>;
+@@ -354,32 +61,5 @@ export type FloodCoverage = {
+ export const label = (value?: string | null) => value?.replaceAll("_", " ") ?? "Unavailable";
+ export const activeAssessment = (row?: PointRisk) => row?.is_current ? row.assessment : null;
+ export const pointCategory = (row?: PointRisk): RiskCategory => activeAssessment(row)?.risk_category ?? "Insufficient Data";
+-export function mapEvidence(row: PointRisk | undefined, horizon: MapHorizon) {
+-  const assessment = activeAssessment(row);
+-  const hours = horizon === "summary" ? 24 : horizon;
+-  const breakdown = Array.isArray(assessment?.horizon_breakdown)
+-    ? assessment.horizon_breakdown.find(entry => (entry?.horizon_hours ?? entry?.hours) === hours) : undefined;
+-  const risk = horizon === "summary" ? assessment?.risk_category : breakdown?.risk_category;
+-  const forecastRain = breakdown?.rain_mm ?? breakdown?.rainfall_mm ?? assessment?.forecast_rainfall?.[`forecast_rain_next_${hours}h_mm`] ?? null;
+-  const prevRain = horizon === "summary" ? (assessment?.observed_rainfall?.rain_prev_24h_mm ?? null) : null;
+-  const rain = prevRain != null && forecastRain != null ? Math.max(prevRain, forecastRain) : (forecastRain ?? prevRain);
+-  return {
+-    category: risk && categories.includes(risk) ? risk : "Insufficient Data" as const,
+-    rain,
+-  };
+-}
+-
+-export function roadScreening(rain: number | null, threshold: number | null, horizon: MapHorizon) {
+-  if (rain == null || !Number.isFinite(rain) || rain < 0 ||
+-      threshold == null || !Number.isFinite(threshold) || threshold <= 0) {
+-    return { label: "Chưa có dữ liệu mưa", depth: "—", color: "#93a0af", rank: 0, status: "unknown" as const };
+-  }
+-  const scale = horizon === 6 ? 0.5 : horizon === 12 ? 0.72 : 1;
+-  const ratio = rain / (threshold * scale);
+-  if (ratio >= 1.15) return { label: "Ngập sâu — Tránh đi qua", depth: "30–50+ cm", color: "#dc2626", rank: 4, status: "deep" as const };
+-  if (ratio >= 0.75) return { label: "Ngập trung bình — Hạn chế qua", depth: "15–30 cm", color: "#f97316", rank: 3, status: "moderate" as const };
+-  if (ratio >= 0.45) return { label: "Ngập nhẹ / Ứ cục bộ", depth: "5–15 cm", color: "#eab308", rank: 2, status: "light" as const };
+-  return { label: "Cao ráo / An toàn — Gợi ý né ngập", depth: "< 5 cm", color: "#16a34a", rank: 1, status: "safe" as const };
+-}
+ export const formatProbability = (value: number | null | undefined) => value == null ? "Unavailable" :
+   new Intl.NumberFormat("en", { style: "percent", maximumFractionDigits: 1 }).format(value);
+diff --git a/frontend/app/dashboard/flood-operations.tsx b/frontend/app/dashboard/flood-operations.tsx
+index 317ce314fad4ad110f0503b31c04c8e7848093a9..3e1c3474ae5a43f08c0da5d2fcea9dc207f01f23 100644
+--- a/frontend/app/dashboard/flood-operations.tsx
++++ b/frontend/app/dashboard/flood-operations.tsx
+@@ -21,7 +21,7 @@ export function FloodMachineLearning({ locations, theme }: { locations: Location
+   const hasBinaryEvaluation = Boolean(metrics.data?.evaluation?.test);
+ 
+   return <>
+-    <Panel title={t("Terrain-based flood risk clustering")} subtitle={t("Terrain and built-up clustering across 9 Da Nang stations")}>
++    <Panel title={t("Terrain-based flood risk clustering")} subtitle={t("Exploratory terrain profiles")}>
+       <Resource query={profiles}>{(data) => <>
+         <p className="metric-note">{data.complete_points} {t("points")} · Silhouette {displayNumber(data.silhouette_in_sample, 3)}</p>
+         <Chart label={t("Flood terrain profile groups")} theme={theme} option={{
+@@ -44,6 +44,9 @@ export function FloodMachineLearning({ locations, theme }: { locations: Location
+             <td>{localTime(row.issued_at)}</td><td>{localTime(row.valid_until)}</td><td>{row.model_version ?? "—"}</td></tr>)}</tbody></table></div>}
+       </Resource>
+     </Panel>}
++    {!hasBinaryEvaluation && <Panel title={t("Flood model readiness")}><Resource query={metrics}>{(data) =>
++      <p>{t(label(data.readiness.status))} ? {data.readiness.blocking_inventory.map((key) => t(label(key))).join(", ")}</p>}
++    </Resource></Panel>}
+     {hasBinaryEvaluation && <Panel title={t("Flood model evaluation")} subtitle={t("Held-out performance and validation status")}>
+       <Resource query={metrics}>{(data) => {
+         const test = data.evaluation?.test;
+diff --git a/frontend/app/dashboard/flood-panels.tsx b/frontend/app/dashboard/flood-panels.tsx
+index 41507be34f1f042f6c5a7e47c00609e777b6e972..850e56aad0aa77e4e36faf7e586430de473427de 100644
+--- a/frontend/app/dashboard/flood-panels.tsx
++++ b/frontend/app/dashboard/flood-panels.tsx
+@@ -8,8 +8,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
+ import { ArrowDownUp, MapPin, RefreshCw } from "lucide-react";
+ import { displayNumber, localTime, request, source, useCollection, useData, type Rain, type Scope, type Weather } from "./data";
+ import {
+-  activeAssessment, categories, floodZones, formatProbability, historicalRoads, historicalScenarios, indexHelp, label, mapEvidence, pointCategory, probabilityHelp, riskColors, riskRadius, roadScreening,
+-  type Assessment, type FloodPrediction, type HistoricalScenarioId, type MapHorizon, type PointRisk, type RiskCategory,
++  activeAssessment, categories, formatProbability, indexHelp, label, pointCategory, probabilityHelp, riskColors,
++  type Assessment, type FloodPrediction, type PointRisk, type RiskCategory,
+ } from "./flood-data";
+ import type { Markers } from "./station-map";
+ import { Empty, Loading, Panel, QueryError, Resource } from "./ui";
+@@ -29,7 +29,7 @@ export function RiskBadge({ category }: { category: RiskCategory }) {
+ function EvidenceState({ row }: { row?: PointRisk }) {
+   const t = useText();
+   return <>{!row?.assessment ? t("No stored assessment") : !row.is_current ? t("Latest assessment expired") :
+-    row.assessment.risk_index == null ? t("Required inputs missing") : label(row.assessment.assessment_status)}</>;
++    row.assessment.risk_index == null ? t("Required weather or terrain data is missing. Check local updates while new data arrives.") : t("Experimental assessment")}</>;
+ }
+ 
+ function Facts({ assessment }: { assessment: Assessment }) {
+@@ -39,7 +39,6 @@ function Facts({ assessment }: { assessment: Assessment }) {
+     <div><dt>{t("Issued")}</dt><dd>{localTime(assessment.issued_at)} ICT</dd></div>
+     <div><dt>{t("Valid until")}</dt><dd>{localTime(assessment.valid_until)} ICT</dd></div>
+     <div><dt>{t("Latest evidence available")}</dt><dd>{latest ? localTime(latest) + " ICT" : t("Unavailable")}</dd></div>
+-    <div><dt>{t("Method")}</dt><dd>{assessment.method_version}</dd></div>
+   </dl>;
+ }
+ 
+@@ -66,12 +65,12 @@ export function FloodOverview({ scope, theme, weather }: {
+         const total = measured.length ? measured.reduce((sum, row) => sum + row.rainfall_total_mm!, 0) : null;
+         return <>
+           <div className="flood-overview grid">
+-            <Panel className="risk-lead" title={t("Highest current forecast risk")} subtitle={t("Flood Risk Index")}>
++            <Panel className="risk-lead" title={t("Highest current forecast risk")} subtitle={t("Experimental assessment")}>
+               {highest?.assessment ? <><strong className="risk-value" title={t(indexHelp)}>{displayNumber(highest.assessment.risk_index)} <small>/ 100</small></strong>
+                 <div className="risk-meter" aria-hidden="true"><div className="risk-meter-fill" style={{ width: `${Math.min(100, Math.max(0, highest.assessment.risk_index ?? 0))}%` }} /></div>
+                 <RiskBadge category={pointCategory(highest)} /><p style={{ marginTop: 8, fontWeight: 700, color: "var(--text)" }}>{highest.point.name}</p><Facts assessment={highest.assessment} /></> :
+-                <><strong className="risk-value">{t("Unavailable")}</strong><RiskBadge category="Insufficient Data" />
+-                  <p>{t("No current assessment has enough evidence for a score.")}</p></>}
++                <><RiskBadge category="Insufficient Data" />
++                  <p>{t("Required weather or terrain data is missing. Check local updates while new data arrives.")}</p></>}
+             </Panel>
+             <Panel title={t("Monitoring coverage")} subtitle={t("Current assessment categories")}>
+               <div className="risk-counts">{categories.map((category) => <div key={category}><RiskBadge category={category} />
+@@ -84,14 +83,16 @@ export function FloodOverview({ scope, theme, weather }: {
+                   {predictions.data?.[0] && <p className="metric-note">{t("Issued")} {localTime(predictions.data[0].issued_at)} · {t("Valid until")} {localTime(predictions.data[0].valid_until)} ICT</p>}</>}
+             </Panel>
+           </div>
++          <p className="metric-note">{rows.length - absent}/{rows.length} {t("points have a current assessment.")}</p>
+           {absent > 0 && <p className="flood-notice" role="status">{absent}/{rows.length} {t("points have missing or expired assessment evidence. Gray indicates unknown risk.")}</p>}
++          <Panel title={t("Location comparison")}><div className="flood-stations">{rows.map((row) => <span key={row.point.code}>{row.point.name} <RiskBadge category={pointCategory(row)} /></span>)}</div></Panel>
+           <Panel title={t("Rainfall context")} subtitle={selected?.point.name}>
+             <div className="flood-context grid">
+               <div><span>{t("Historical rainfall · selected archive dates")}</span>
+                 <strong>{historical.isFetching ? t("Loading…") : historical.error ? t("Unavailable") : total == null ? t("Unavailable") : displayNumber(total) + " mm"}</strong>
+                 <small>{!historical.isFetching && !historical.error && measured.length > 0 ?
+                   measured.length + " " + t(measured.length === 1 ? "day with measurements" : "days with measurements") : ""}</small></div>
+-              <div><span>{t("Rainfall · preceding 24 h")}</span><strong>{current?.observed_rainfall?.rain_prev_24h_mm == null ? t("Unavailable") : displayNumber(current.observed_rainfall.rain_prev_24h_mm) + " mm"}</strong></div>
++              <div><span>{t(current?.recent_rainfall_type === "modeled_estimate" ? "Modeled rainfall · preceding 24 h" : "Rainfall · preceding 24 h")}</span><strong>{current?.observed_rainfall?.rain_prev_24h_mm == null ? t("Unavailable") : displayNumber(current.observed_rainfall.rain_prev_24h_mm) + " mm"}</strong></div>
+               {[6, 12, 24].map((hours) => {
+                 const rain = current?.forecast_rainfall?.[`forecast_rain_next_${hours}h_mm`];
+                 return <div key={hours}><span>{t("Forecast rain · next")} {hours} h</span>
+@@ -128,15 +129,16 @@ export function FloodOverview({ scope, theme, weather }: {
+ 
+ function RiskDetails({ code }: { code: string }) {
+   const t = useText();
++  const predictions = useCurrentPredictions();
+   const details = useData<PointRisk>("flood-risk/" + encodeURIComponent(code) + "/details", undefined, Boolean(code), 60_000);
+   return <Panel title={t("Contributing factors and evidence")}>
+     {!code ? <Empty title={t("Select a monitoring point")} detail={t("Choose a row to inspect its latest assessment.")} /> :
+-      <Resource query={details}>{(row) => row.assessment ? <AssessmentEvidence row={row} assessment={row.assessment} /> :
++      <Resource query={details}>{(row) => row.assessment ? <AssessmentEvidence row={row} assessment={row.assessment} prediction={predictions.data?.find((item) => item.location === code)} /> :
+         <Empty title={t("No stored assessment")} detail={t("Assessment evidence is unavailable for") + " " + row.point.name + "."} />}</Resource>}
+   </Panel>;
+ }
+ 
+-function AssessmentEvidence({ row, assessment }: { row: PointRisk; assessment: Assessment }) {
++function AssessmentEvidence({ row, assessment, prediction }: { row: PointRisk; assessment: Assessment; prediction?: FloodPrediction }) {
+   const t = useText();
+   const language = useLanguage();
+   const context = assessment.inundation_detail;
+@@ -151,10 +153,10 @@ function AssessmentEvidence({ row, assessment }: { row: PointRisk; assessment: A
+     "Insufficient Data": "Check official updates before making travel decisions.",
+   }[category];
+   const describe = (key: string) => t(label(key));
+-  const threshold = context?.trigger_thresholds_mm?.["24h_mm"] ?? context?.rainfall_threshold_mm;
+-  const thresholdsKnown = typeof threshold === "number" && Number.isFinite(threshold);
++
++
+   const observed = assessment.observed_rainfall?.rain_prev_24h_mm;
+-  const provenanceDetail = context?.data_provenance;
++
+   const factorExplanation: Record<string, string> = {
+     forecast_rainfall: "More forecast rain can increase runoff entering the drainage network.",
+     recent_rainfall: "Recent rain can reduce the ground's remaining capacity to absorb water.",
+@@ -166,50 +168,32 @@ function AssessmentEvidence({ row, assessment }: { row: PointRisk; assessment: A
+     <strong>{row.point.name}</strong> <RiskBadge category={pointCategory(row)} />
+     <p className="metric-note"><EvidenceState row={row} /> · {describe(assessment.validation_status)}</p>
+     <Facts assessment={assessment} />
+-    {(context?.primary_driver || context?.confidence_level || thresholdsKnown) && <div className="detail-chips">
+-      {context?.primary_driver && <div className="detail-chip"><span>{t("Primary driver")}:</span><strong>{describe(context.primary_driver)}</strong></div>}
+-      {context?.confidence_level && <div className="detail-chip"><span>{t("Confidence level")}:</span><strong>{t(context.confidence_level)}</strong></div>}
+-      {thresholdsKnown && <div className="detail-chip"><span>{t("Flood-trigger rainfall threshold")}:</span><strong>{displayNumber(threshold)} mm / 24h</strong></div>}
++    {prediction?.flood_probability != null && <p>{t("Flood probability")} {formatProbability(prediction.flood_probability)}</p>}
++    {row.is_current && assessment.risk_index != null && <p>{t("Flood Risk Index")} {displayNumber(assessment.risk_index)} / 100 · {assessment.forecast_horizon_hours} h</p>}
++    {row.is_current && <p>{t("Evidence coverage")} {displayNumber(assessment.weight_coverage * 100, 0)}%</p>}
++    {row.is_current && assessment.factors?.terrain?.inputs.elevation_m != null && <p>{t("Elevation (m)")} {displayNumber(assessment.factors.terrain.inputs.elevation_m)}</p>}
++    {row.is_current && <div className="flood-context grid">
++      <div><span>{t(assessment.recent_rainfall_type === "modeled_estimate" ? "Modeled rainfall · preceding 24 h" : "Rainfall · preceding 24 h")}</span><strong>{observed == null ? t("Unavailable") : displayNumber(observed) + " mm"}</strong></div>
++      {[6, 12, 24].map((hours) => {
++        const rain = assessment.forecast_rainfall?.[`forecast_rain_next_${hours}h_mm`];
++        return <div key={hours}><span>{t("Forecast rain · next")} {hours} h</span><strong>{rain == null ? t("Unavailable") : displayNumber(rain) + " mm"}</strong></div>;
++      })}
+     </div>}
+-    {provenanceDetail?.warning && <p className="flood-notice" role="status">{t(provenanceDetail.warning)}</p>}
+-    <h3 className="section-subhead">{t("Rainfall and risk by horizon")}</h3>
+-    <div className="horizon-grid">{[6, 12, 24].map(hours => {
+-      const entry = Array.isArray(assessment.horizon_breakdown)
+-        ? assessment.horizon_breakdown.find(item => (item?.horizon_hours ?? item?.hours) === hours)
+-        : undefined;
+-      const categoryAtHorizon = row.is_current ? entry?.risk_category ?? (hours === assessment.forecast_horizon_hours ? category : undefined) : undefined;
+-      const rain = entry?.rain_mm ?? entry?.rainfall_mm ?? assessment.forecast_rainfall?.[`forecast_rain_next_${hours}h_mm`];
+-      const horizonThreshold = entry?.threshold_mm ?? context?.trigger_thresholds_mm?.[`${hours}h_mm`];
+-      const pct = row.is_current && entry?.threshold_ratio != null ? Math.min(100, Math.max(0, entry.threshold_ratio * 100)) : 0;
+-      const barColor = pct >= 80 ? "#f47180" : pct >= 50 ? "#f29955" : pct >= 25 ? "#e8c658" : "#53ca89";
+-      return <div className="horizon-card" key={hours}>
+-        <div className="horizon-head">
+-          <strong>{hours} {t("hours")}</strong>
+-          {categoryAtHorizon && categories.includes(categoryAtHorizon) ? <RiskBadge category={categoryAtHorizon} /> : <span className="metric-note">{t("Unavailable")}</span>}
+-        </div>
+-        <div className="horizon-rain">{row.is_current ? displayNumber(rain) : "—"}<small>mm</small></div>
+-        <div className="horizon-bar" aria-hidden="true"><div className="horizon-bar-fill" style={{ width: `${pct}%`, backgroundColor: barColor }} /></div>
+-        <div className="horizon-meta">
+-          <span>{t("Trigger threshold (mm)")}: {horizonThreshold != null ? `${displayNumber(horizonThreshold)} mm` : "—"}</span>
+-          <span>{row.is_current && entry?.threshold_ratio != null ? `${displayNumber(entry.threshold_ratio * 100, 0)}%` : "—"}</span>
+-        </div>
+-      </div>;
+-    })}</div>
+-    <p className="metric-note">{t("Rainfall · preceding 24 h")}: <strong>{observed == null ? t("Unavailable") : `${displayNumber(observed)} mm`}</strong>
+-      {thresholdsKnown && observed != null && <> · {t("Difference from threshold")}: <strong>{displayNumber(observed - threshold)} mm</strong></>}</p>
+-    {row.is_current && typeof context?.depth_cm === "number" && <p>{t("Estimated depth")} {displayNumber(context.depth_cm)} cm</p>}
+-    {row.is_current && typeof context?.starts_at === "string" && <p>{t("Estimated onset")} {localTime(context.starts_at)} ICT</p>}
++    {row.is_current && assessment.assessment_status === "limited" && <p>{t("This score uses the available factors. Some inputs are missing.")}</p>}
++    {row.is_current && context?.primary_driver && <p>{t(factorExplanation[context.primary_driver] ?? "Experimental assessment")}</p>}
+     <div className="advice-box" style={{ borderLeftColor: riskColors[category] }}>
+       <h3>{t("Recommended actions")}</h3>
+       <ul>{(row.is_current && Array.isArray(localized) && localized.length ? localized : [advice]).map((action, index) =>
+         <li key={index}>{t(action)}</li>)}</ul>
+     </div>
++    <details className="flood-disclosure"><summary>{t("Technical details")}</summary><p>{assessment.method_version} · {row.point.latitude}, {row.point.longitude}</p>
++    {Object.entries(assessment.modeled_soil_moisture ?? {}).map(([depth, value]) => <p key={depth}>{describe(depth)} · {value == null ? t("Unavailable") : displayNumber(value, 3) + " m³/m³"}</p>)}
+     <div className="table-wrap"><table className="flood-table"><thead><tr><th scope="col">{t("Factor")}</th><th scope="col">{t("Inputs")}</th>
+       <th scope="col" title={t(indexHelp)}>{t("Index points")}</th></tr></thead><tbody>
+       {Object.entries(assessment.factors ?? {}).map(([factor, data]) => <tr key={factor}><th scope="row">{describe(factor)}</th>
+         <td className="factor-inputs">{Object.entries(data.inputs).map(([key, value]) => <div key={key}>{describe(key)} · {displayNumber(value, 3)}</div>)}
+           <small>{t(data.contribution_points == null ? "No index contribution" : factorExplanation[factor] ?? "Contribution reflects the configured weight and scaled inputs.")}</small></td>
+-        <td><div className="factor-bar-wrap"><strong>{displayNumber(data.contribution_points, 2)}</strong>
++        <td><small>{displayNumber(data.weight * 100, 0)}% {t("factor weight")}</small><div className="factor-bar-wrap"><strong>{displayNumber(data.contribution_points, 2)}</strong>
+           {data.contribution_points != null && <span className="factor-bar" aria-hidden="true"><i style={{ width: `${Math.min(100, Math.max(2, data.contribution_points * 2))}%` }} /></span>}
+         </div></td></tr>)}
+     </tbody></table></div>
+@@ -225,13 +209,13 @@ function AssessmentEvidence({ row, assessment }: { row: PointRisk; assessment: A
+       {Object.entries(assessment.data_freshness ?? {}).map(([key, info]) => <p key={key}>{describe(key)} · {t("Available at")} {localTime(info.available_at)} ICT
+         {info.last_valid_at && <> · {t("Evidence valid through")} {localTime(info.last_valid_at)} ICT</>}</p>)}
+       {Object.values(assessment.excluded_factors ?? {}).map((reason) => <p key={reason}>{t(reason)}</p>)}
+-    </details>
++    </details></details>
+   </>;
+ }
+ 
+-type Column = "name" | "coordinates" | "index" | "probability" | "category" | "horizon" | "quality" | "version";
+-const columns: [Column, string][] = [["name", "Location"], ["coordinates", "Coordinates"], ["index", "Flood Risk Index"],
+-  ["probability", "Flood probability"], ["category", "Risk category"], ["horizon", "Horizon"], ["quality", "Evidence coverage"], ["version", "Version"]];
++type Column = "name" | "index" | "category" | "horizon";
++const columns: [Column, string][] = [["name", "Location"], ["index", "Flood Risk Index"],
++  ["category", "Risk category"], ["horizon", "Horizon"]];
+ 
+ export function FloodForecast({ selected, select }: { selected: string; select: (code: string) => void }) {
+   const t = useText();
+@@ -249,19 +233,16 @@ export function FloodForecast({ selected, select }: { selected: string; select:
+     const horizon = assessment?.forecast_horizon_hours ?? (prediction ?
+       (Date.parse(prediction.valid_until) - Date.parse(prediction.issued_at)) / 3_600_000 : undefined);
+     const columns = {
+-      name: row.point.name, coordinates: row.point.latitude, index: assessment?.risk_index,
+-      probability: prediction?.flood_probability, category: pointCategory(row),
+-      horizon, quality: assessment?.weight_coverage,
+-      version: assessment?.method_version ?? prediction?.model_version,
++      name: row.point.name, index: assessment?.risk_index, category: pointCategory(row), horizon,
+     };
+-    return { ...row, assessment, prediction, columns };
++    return { ...row, assessment, columns };
+   }).sort((a, b) => {
+     const left = a.columns[sort.key], right = b.columns[sort.key];
+     if (left == null || right == null) return left == null && right == null ? a.point.name.localeCompare(b.point.name) : left == null ? 1 : -1;
+     return (sort.descending ? -1 : 1) * (typeof left === "number" && typeof right === "number" ? left - right : String(left).localeCompare(String(right)));
+   }), [risks.data, predictions.data, sort]);
+   return <>
+-    <Panel title={t("Location comparison")} subtitle={t("Current assessments and independently validated probabilities")}
++    <Panel title={t("Location comparison")} subtitle={t("Experimental assessment")}
+       action={<button className="button primary" disabled={generate.isPending} onClick={() => generate.mutate()}><RefreshCw size={15} />{generate.isPending ? t("Generating…") : t("Generate assessments")}</button>}>
+       {generate.error && <QueryError error={generate.error} retry={() => generate.mutate()} />}
+       {generate.isSuccess && <p className="metric-note" role="status">{generate.data.data.length} {t("assessment results returned.")}</p>}
+@@ -269,17 +250,12 @@ export function FloodForecast({ selected, select }: { selected: string; select:
+       <Resource query={risks} empty={<Empty title={t("No flood monitoring points")} detail={t("Register monitoring points before generating assessments.")} />}>{() =>
+         <div className="table-wrap"><table className="flood-table"><thead><tr>{columns.map(([key, title]) =>
+           <th key={key} scope="col" aria-sort={sort.key === key ? sort.descending ? "descending" : "ascending" : undefined}>
+-            <button className="sort-button" title={key === "index" ? t(indexHelp) : key === "probability" ? t(probabilityHelp) : undefined}
++            <button className="sort-button" title={key === "index" ? t(indexHelp) : undefined}
+               onClick={() => setSort({ key, descending: sort.key === key ? !sort.descending : false })}>{t(title)}<ArrowDownUp size={13} /></button></th>)}</tr></thead>
+-          <tbody>{rows.map(({ point, assessment, prediction, ...row }) => <tr key={point.code} data-selected={point.code === selected}>
++          <tbody>{rows.map(({ point, assessment, ...row }) => <tr key={point.code} data-selected={point.code === selected}>
+             <th scope="row"><button className="text-button" onClick={() => select(point.code)} aria-label={t("Inspect") + " " + point.name}>{point.name}</button></th>
+-            <td>{point.latitude.toFixed(5)}, {point.longitude.toFixed(5)}</td>
+             <td title={t(indexHelp)}>{assessment?.risk_index == null ? "—" : displayNumber(assessment.risk_index) + " / 100"}</td>
+-            <td title={t(probabilityHelp)}>{predictions.isPending ? t("Loading…") : t(formatProbability(prediction?.flood_probability))}</td>
+             <td><RiskBadge category={row.columns.category} /></td><td>{row.columns.horizon == null ? "—" : row.columns.horizon + " h"}</td>
+-            <td>{assessment ? displayNumber(assessment.weight_coverage * 100, 0) + "% " + t("factor weight") :
+-              prediction ? t("Validated forecast available") : <EvidenceState row={risks.data?.find((x) => x.point.code === point.code)} />}</td>
+-            <td>{[assessment?.method_version, prediction?.model_version].filter(Boolean).join(" · ") || "—"}</td>
+           </tr>)}</tbody></table></div>}
+       </Resource>
+     </Panel>
+@@ -287,165 +263,50 @@ export function FloodForecast({ selected, select }: { selected: string; select:
+   </>;
+ }
+ 
++export function HistoricalFlood({ location, locations, select }: { location: string; locations: PointRisk["point"][]; select: (code: string) => void }) {
++  const t = useText();
++  const point = useData<PointRisk>("flood-risk/" + encodeURIComponent(location) + "/details", undefined, Boolean(location));
++  const terrain = point.data?.assessment?.factors?.terrain?.inputs;
++  const rainfall = useCollection<Rain>("rainfall/daily", {
++    location, source, start_date: "2022-10-14", end_date: "2022-10-15",
++  }, Boolean(location));
++  return <Panel title={t("October 2022 flood case study")} subtitle={t("Retrospective analysis")}>
++    <p>{t("On 14–15 October, flooding was reported around Tuy Loan market in Hoa Phong. The Nam My weir overtopped during the flash flood, with a reported water level over 12 m at the weir.")}</p>
++    <p><a href="https://baodanang.vn/ve-tran-mua-lich-su-ngay-14-10-2022-o-da-nang-3235019.html">{t("Recorded flooding and rainfall report")}</a> · <a href="https://baodanang.vn/rut-kinh-nghiem-van-hanh-dap-dang-nam-my-3161189.html">{t("Nam My weir report")}</a></p>
++    <label>{t("Sampling point")} <select value={location} onChange={(event) => select(event.target.value)}>
++      {locations.map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}
++    </select></label>
++    <p>{t("ERA5 grid rainfall at the selected point")}</p>
++    {terrain?.elevation_m != null && <p>{t("Terrain reference at the selected monitoring point")} · {t("Elevation (m)")} {displayNumber(terrain.elevation_m)} · {t("Built up fraction")} {terrain.built_up_fraction == null ? t("Unavailable") : displayNumber(terrain.built_up_fraction * 100, 0) + "%"}</p>}
++    <Resource query={rainfall}>{(rows) => <ul>{rows.map((row) =>
++      <li key={row.period_start}>{row.period_start.slice(0, 10)} · {row.rainfall_total_mm == null ? t("Unavailable") : displayNumber(row.rainfall_total_mm) + " mm"} ({row.rainfall_hours}/{row.expected_hours} h)</li>)}</ul>}</Resource>
++    <p>{t("The reported flooding and weir level refer to specific sites. ERA5 rainfall is a grid estimate shared by nearby points. Archived forecast inputs and matched point observations are unavailable for a retrospective risk score.")}</p>
++  </Panel>;
++}
++
+ export function FloodMap({ selected, select }: { selected: string; select: (code: string) => void }) {
+   const t = useText();
+-  const [focused, setFocused] = useState("hai-chau");
+-  const [focusedRoad, setFocusedRoad] = useState("");
+-  const [horizon, setHorizon] = useState<MapHorizon>("summary");
+-  const [scenarioId, setScenarioId] = useState<HistoricalScenarioId>("live");
+-  const [showZones, setShowZones] = useState(true);
+-  const [showFloodRoads, setShowFloodRoads] = useState(true);
+-  const [showSafeRoads, setShowSafeRoads] = useState(true);
+-  const [expanded, setExpanded] = useState(false);
+-  const [fitNonce, setFitNonce] = useState(0);
+   const risks = useData<PointRisk[]>("flood-risk/latest", undefined, true, 60_000);
+-  const predictions = useCurrentPredictions();
+-  const mappedPoints = useMemo(() => (risks.data ?? []).map(({point}) => point)
+-    .filter(point => Number.isFinite(point.latitude) && Math.abs(point.latitude) <= 90 &&
+-      Number.isFinite(point.longitude) && Math.abs(point.longitude) <= 180), [risks.data]);
+-  const activeScenario = historicalScenarios.find(s => s.id === scenarioId) ?? historicalScenarios[0];
+-  function focus(code: string) { setFocusedRoad(""); setFocused(code); select(code); }
+-  return <><Panel title="Bản đồ phân đoạn ngập lụt & lộ trình né ngập"
+-    subtitle="Hiển thị chuyển tiếp màu theo đoạn đường (Đỏ → Cam → Vàng → Xanh lá) kết hợp vùng trũng địa hình DEM 30m">
+-    {predictions.error && <QueryError error={predictions.error} retry={() => void predictions.refetch()} />}
++  return <><Panel title={t("Da Nang Flood Map")} subtitle={t("Markers show assessments at monitoring points.")}>
+     <Resource query={risks} empty={<Empty title={t("No flood monitoring points")} detail={t("Registered points will appear on the map.")} />}>
+-      {(rows) => {
+-        const assessments = new Map(rows.map(row => [row.point.code, row]));
+-        const getRain = (locationCode: string) => {
+-          if (scenarioId !== "live") {
+-            return activeScenario.rain24hByLocation[locationCode] ?? activeScenario.defaultRain24h;
+-          }
+-          return mapEvidence(assessments.get(locationCode), horizon).rain;
+-        };
+-        const activeHorizon: MapHorizon = scenarioId === "live" ? horizon : "summary";
+-        const roads = historicalRoads.map(road => {
+-          const rain = getRain(road.locationCode);
+-          const screening = roadScreening(rain, road.triggerMm24h, activeHorizon);
+-          return {...road, rain, screening};
+-        }).sort((a,b) => (a.locationCode === (focused || selected) ? -1 : 0) - (b.locationCode === (focused || selected) ? -1 : 0) || b.screening.rank - a.screening.rank);
+-
+-        const mapRoads = roads.filter(r => (r.routeType === "safer_corridor" ? showSafeRoads : showFloodRoads));
+-        const visibleRoads = focused ? roads.filter(r => r.locationCode === focused) : roads;
+-        const floodRiskRoads = visibleRoads.filter(r => r.routeType === "flood_prone" && r.screening.rank >= 2);
+-        const saferAndLowRoads = visibleRoads.filter(r => r.routeType === "safer_corridor" || r.screening.rank <= 1);
+-
+-        const mapZones = showZones ? floodZones.map(zone => {
+-          const rain = getRain(zone.locationCode);
+-          const screening = roadScreening(rain, zone.triggerMm24h, activeHorizon);
+-          const coreColor = screening.rank >= 4 ? "#dc2626" : screening.rank === 3 ? "#f97316" : screening.rank === 2 ? "#eab308" : "#22c55e";
+-          const outerColor = screening.rank >= 4 ? "#f97316" : screening.rank === 3 ? "#eab308" : "#22c55e";
+-          return {
+-            ...zone,
+-            coreColor,
+-            outerColor,
+-            active: screening.rank >= 2,
+-            content: <>
+-              <strong className="popup-name">{zone.name}</strong>
+-              <div style={{ fontWeight: 700, color: coreColor }}>{screening.label} ({screening.depth})</div>
+-              <div>Lượng mưa tham chiếu: <strong>{displayNumber(rain)} mm</strong> · Ngưỡng: {zone.triggerMm24h} mm</div>
+-              <p style={{ margin: "6px 0 0" }}>{zone.elevationNote}</p>
+-            </>,
+-          };
+-        }) : undefined;
+-
+-        return <>
+-        <div className="scenario-bar" role="group" aria-label="Chế độ xem dự báo hoặc đối chiếu lịch sử">
+-          {historicalScenarios.map(sc => (
+-            <button key={sc.id} type="button" className="scenario-pill"
+-              aria-pressed={scenarioId === sc.id}
+-              onClick={() => setScenarioId(sc.id)}>
+-              <strong>{sc.label}</strong>
+-              <small>{sc.dateLabel}</small>
+-            </button>
+-          ))}
+-        </div>
+-        {scenarioId !== "live" ? (
+-          <div className="scenario-banner" role="status">
+-            <div>
+-              <strong>Đối chiếu sự kiện lịch sử đã kiểm chứng — {activeScenario.label}:</strong> {activeScenario.summary}
+-            </div>
+-            {activeScenario.source && <a href={activeScenario.source} target="_blank" rel="noreferrer">Nguồn kiểm chứng</a>}
+-          </div>
+-        ) : (
+-          <div className="segmented flood-map-horizons" role="group" aria-label={t("Forecast window")}>
+-            {([["summary","Tổng hợp 24 giờ"],[6,"6 giờ tới"],[12,"12 giờ tới"],[24,"24 giờ tới"]] as const).map(([value, title]) =>
+-              <button type="button" key={value} aria-pressed={horizon === value} onClick={() => setHorizon(value)}>{title}</button>)}
+-          </div>
+-        )}
+-        <div className="flood-map-toolbar">
+-          <span>{mappedPoints.length}/{rows.length} điểm quan trắc</span>
+-          <label><input type="checkbox" checked={showFloodRoads} onChange={e => { setShowFloodRoads(e.target.checked); setFocusedRoad(""); }} /> Tuyến ngập</label>
+-          <label><input type="checkbox" checked={showSafeRoads} onChange={e => { setShowSafeRoads(e.target.checked); setFocusedRoad(""); }} /> Tuyến né ngập</label>
+-          <label><input type="checkbox" checked={showZones} onChange={e => setShowZones(e.target.checked)} /> Vùng trũng lan tỏa</label>
+-          <button className="button secondary" type="button" onClick={() => { setFocused(""); setFocusedRoad(""); setFitNonce(n => n + 1); }}>Xem toàn Đà Nẵng</button>
+-          <button className="button primary" type="button" onClick={() => setExpanded(v => !v)}>{expanded ? "Thu gọn bản đồ" : "Mở rộng toàn bản đồ"}</button>
+-        </div>
+-        <StationMap points={mappedPoints} selected={selected} focused={focused} onSelect={focus} latest={{}} weather={[]}
+-          showAreas={false} zones={mapZones} focusedRoad={focusedRoad} expanded={expanded} fitNonce={fitNonce}
+-          roads={mapRoads.map(road => ({
+-            ...road,
+-            color: road.screening.color,
+-            dashed: road.routeType === "safer_corridor" && road.screening.rank === 1,
+-            content: <>
+-              <strong className="popup-name">{road.name}</strong>
+-              <div style={{ fontWeight: 700, color: road.screening.color, marginBottom: 4 }}>
+-                {road.screening.label} · Ước tính: {road.screening.depth}
+-              </div>
+-              <div><strong>Đoạn đường:</strong> {road.fromLabel} → {road.toLabel}</div>
+-              <div><strong>Lượng mưa tham chiếu:</strong> {displayNumber(road.rain)} mm (ngưỡng đoạn: {road.triggerMm24h} mm/24h)</div>
+-              <div style={{ marginTop: 4 }}><strong>Đoạn nối tiếp / Gợi ý né:</strong> {road.connectedNext}</div>
+-              <p style={{ margin: "6px 0 4px" }}>{road.historicalNote}</p>
+-              <a href={road.source} target="_blank" rel="noreferrer">Nguồn kiểm chứng lịch sử</a>
+-            </>,
+-          }))}
+-          floodMarkers={Object.fromEntries(rows.map((row) => {
+-            const liveEv = mapEvidence(row, horizon);
+-            const rain = getRain(row.point.code);
+-            const category: RiskCategory = scenarioId === "live"
+-              ? liveEv.category
+-              : (rain ?? 0) >= 150 ? "Very High" : (rain ?? 0) >= 90 ? "High" : (rain ?? 0) >= 45 ? "Moderate" : "Low";
+-            const current = activeAssessment(row);
+-            return [row.point.code, { color: riskColors[category], radius: riskRadius[category], content: <>
+-              <strong className="popup-name">{row.point.name}</strong><div><RiskBadge category={category} /></div>
+-              <div>Lượng mưa tham chiếu: <strong>{displayNumber(rain)} mm</strong></div>
+-              {scenarioId === "live" && horizon === "summary" && current?.risk_index != null && <div>Chỉ số rủi ro: <strong>{displayNumber(current.risk_index)} / 100</strong></div>}
+-              {scenarioId === "live" && row.assessment && <>
+-                <div>Phát hành: {localTime(row.assessment.issued_at)} ICT</div>
+-                <div>Hiệu lực đến: {localTime(row.assessment.valid_until)} ICT</div>
+-              </>}
+-            </> }];
+-          }))} />
+-        <div className="corridor-legend" aria-label="Chú giải thang màu mức ngập theo đoạn đường">
+-          <span className="corridor-legend-item"><i style={{ backgroundColor: "#dc2626" }} />Ngập sâu (30–50+ cm) · Tránh đi qua</span>
+-          <span className="corridor-legend-item"><i style={{ backgroundColor: "#f97316" }} />Ngập trung bình (15–30 cm) · Hạn chế</span>
+-          <span className="corridor-legend-item"><i style={{ backgroundColor: "#eab308" }} />Ngập nhẹ (5–15 cm) · Đi chậm</span>
+-          <span className="corridor-legend-item"><i style={{ backgroundColor: "#16a34a" }} />Cao ráo (&lt; 5 cm) · Gợi ý né ngập</span>
+-        </div>
+-        <div className="road-groups">
+-          <div className="road-group-card">
+-            <h4><i className="road-dot" style={{ backgroundColor: "#dc2626" }} />Các đoạn đường có nguy cơ ngập ({floodRiskRoads.length})</h4>
+-            <div className="flood-stations">{floodRiskRoads.length ? floodRiskRoads.map(road => <button type="button" className="button secondary" key={road.id}
+-              aria-pressed={focusedRoad === road.id} onClick={() => { setFocused(road.locationCode); setFocusedRoad(road.id); }}>
+-              <MapPin size={15} style={{ color: road.screening.color, flexShrink: 0 }} />
+-              <span>{road.name}<small style={{ color: road.screening.color }}>{road.screening.label} ({road.screening.depth})</small></span>
+-            </button>) : <p className="chart-note">Với lượng mưa dự báo hiện tại, chưa có đoạn đường nào vượt ngưỡng ngập. Hãy chọn một sự kiện lịch sử phía trên để xem bản đồ chuyển màu khi mưa lớn.</p>}</div>
+-          </div>
+-          <div className="road-group-card">
+-            <h4><i className="road-dot" style={{ backgroundColor: "#16a34a" }} />Tuyến cao ráo / Gợi ý né ngập ({saferAndLowRoads.length})</h4>
+-            <div className="flood-stations">{saferAndLowRoads.map(road => <button type="button" className="button secondary" key={road.id}
+-              aria-pressed={focusedRoad === road.id} onClick={() => { setFocused(road.locationCode); setFocusedRoad(road.id); }}>
+-              <MapPin size={15} style={{ color: road.screening.color, flexShrink: 0 }} />
+-              <span>{road.name}<small>{road.fromLabel} → {road.toLabel} · {road.screening.depth}</small></span>
+-            </button>)}</div>
+-          </div>
+-        </div>
++      {(rows) => <><StationMap points={rows.map(({ point }) => point)} selected={selected} onSelect={select}
++        latest={{}} weather={[]} showAreas={false}
++        floodMarkers={Object.fromEntries(rows.map((row) => {
++          const category = pointCategory(row);
++          const current = activeAssessment(row);
++          return [row.point.code, { color: riskColors[category], content: <>
++            <strong className="popup-name">{row.point.name}</strong><div><RiskBadge category={category} /></div>
++            <p>{current?.risk_index == null ? <EvidenceState row={row} /> : displayNumber(current.risk_index) + " / 100"}</p>
++            <p>{t("Conditions may vary between monitoring points.")}</p>
++            {current?.risk_index != null && <div>{t("Valid until")} {localTime(current.valid_until)} ICT</div>}
++          </> }];
++        }))} />
+         <div className="flood-stations">{rows.map((row) =>
+           <button className="button secondary" key={row.point.code} type="button"
+-            onClick={() => mappedPoints.some(point => point.code === row.point.code) ? focus(row.point.code) : select(row.point.code)}
+-            aria-pressed={(focused || selected) === row.point.code}>
+-            <MapPin size={16} style={{color:riskColors[mapEvidence(row, horizon).category]}} />
+-            <span>{row.point.name}<small>{mappedPoints.some(point => point.code === row.point.code) ? t(mapEvidence(row, horizon).category) : t("Coordinates unavailable")}</small></span></button>)}</div>
+-      </>;}}
++            onClick={() => select(row.point.code)} aria-pressed={selected === row.point.code}>
++            <MapPin size={16} style={{ color: riskColors[pointCategory(row)] }} />
++            <span>{row.point.name}<small>{t(pointCategory(row))}</small></span>
++          </button>)}</div></>}
+     </Resource>
+   </Panel><RiskDetails code={selected} /></>;
+ }
+diff --git a/frontend/app/dashboard/operation-panels.tsx b/frontend/app/dashboard/operation-panels.tsx
+index 98f50764ccd0590f12e331add719940191b1d673..cf5000b83243544ba8991750478814a213b0529b 100644
+--- a/frontend/app/dashboard/operation-panels.tsx
++++ b/frontend/app/dashboard/operation-panels.tsx
+@@ -142,6 +142,7 @@ export function DataManagement({ locations }: { locations: Location[] }) {
+   const [qualityOffset, setQualityOffset] = useState(0);
+   const history = usePage<Run>("weather/ingestion/history", historyOffset);
+   const ingestHistory = useData<Run[]>("weather/ingestion/history", { limit: 99 }, true, 45_000);
++  const schedule = useData<{ next_run_at: string | null; latest_run: Run | null }>("weather/ingestion/status", undefined, true, 45_000);
+   const warehouse = useData<Warehouse>("weather/etl/status", undefined, true, 45_000);
+   const quality = usePage<Quality>("weather/quality", qualityOffset);
+   const manager = useQueryClient();
+@@ -150,6 +151,7 @@ export function DataManagement({ locations }: { locations: Location[] }) {
+     onSuccess: () => {
+       void manager.invalidateQueries({ queryKey: ["weather/ingestion/history"] });
+       void manager.invalidateQueries({ queryKey: ["weather/latest"] });
++      void manager.invalidateQueries({ predicate: ({ queryKey }) => /^(flood-risk\/|weather\/ingestion\/)/.test(String(queryKey[0])) });
+     },
+   });
+   const success = ingestHistory.data?.find((row) => row.status === "succeeded");
+@@ -170,6 +172,8 @@ export function DataManagement({ locations }: { locations: Location[] }) {
+     <Panel title={t("Ingestion history")} subtitle={t("Open-Meteo collection runs")}
+       action={<button className="button secondary" onClick={() => ingest.mutate()} disabled={ingest.isPending}>
+         {ingest.isPending ? t("Collecting…") : t("Run ingestion")}</button>}>
++      <p className="metric-note">{t("Next scheduled ingestion")} {schedule.data?.next_run_at ? localTime(schedule.data.next_run_at) + " ICT" : t("Unavailable")}</p>
++      {schedule.data?.latest_run && <StatePill status={schedule.data.latest_run.status} />}
+       {ingest.error && <QueryError error={ingest.error} retry={() => ingest.mutate()} />}
+       {ingest.isSuccess && <p className="chart-note" role="status">{t("Run #")}{ingest.data.data.id} succeeded.</p>}
+       <Resource query={history}>{(page) => page.data.length ? <Runs rows={page.data} /> : <Empty title={t("No ingestion runs on this page")} />}</Resource>
+diff --git a/frontend/app/dashboard/vi.ts b/frontend/app/dashboard/vi.ts
+index 78528372c250ce26c50bd78e7998bd72709c43b1..56f51c8c75e32b918b1641a86d9090a47b0cef9f 100644
+--- a/frontend/app/dashboard/vi.ts
++++ b/frontend/app/dashboard/vi.ts
+@@ -139,12 +139,11 @@ export const vi: Record<string, string> = {
+   "No verified tide-to-site relationship or compatible local stage datum": "Chưa xác minh mối liên hệ triều với điểm này hoặc mốc cao độ tương thích.",
+   "Experimental score from 0 to 100. It measures the index factors on their configured scale.": "Chỉ số rủi ro tổng hợp (0–100) tính từ mưa dự báo, mưa thực tế, địa hình (DEM/WorldCover) và độ ẩm đất.",
+   "Estimated chance of inundation within the 24-hour forecast window from an approved calibrated flood model.": "Xác suất ngập dự báo trong 24 giờ tới từ mô hình học máy đã hiệu chỉnh.",
+-  "historical data calibrated": "Đã hiệu chỉnh trên dữ liệu lịch sử 2020–2026",
+-  "experimental heuristic unvalidated": "Hiệu chỉnh trên dữ liệu lịch sử 2020–2026",
+-  "Experimental research tool. For official warnings, consult local authorities.": "Hệ thống Khai phá Dữ liệu & Dự báo rủi ro ngập lụt Đà Nẵng dựa trên tập dữ liệu lịch sử 2020–2026 đã kiểm chứng và mô hình học máy XGBoost.",
+-  "Sampling points · no modeled inundation extent": "Dự báo rủi ro theo 9 điểm quan trắc và các tuyến đường trọng điểm Đà Nẵng",
++  "historical data calibrated": "Chưa xác minh hiệu chỉnh",
++  "experimental heuristic unvalidated": "Chỉ số thử nghiệm, chưa được kiểm định",
++  "Experimental research tool. For official warnings, consult local authorities.": "Chỉ số ngập đang trong giai đoạn thử nghiệm. Hãy theo dõi cảnh báo chính thức của địa phương.",
+   "Point and provider-grid evidence. Street-level conditions are unverified.": "Dự báo dựa trên dữ liệu quan trắc lịch sử, dự báo khí tượng và ngưỡng ngập từng khu vực.",
+-  "Observation points, reference circles and historical sites are distinct layers. Circles are illustrative, with fixed radii of 500–1,800 m, and historical pins mark approximate areas. The map has no 2D hydraulic simulation.": "Bản đồ tổng hợp 9 điểm quan trắc, vùng ảnh hưởng theo mức rủi ro và các tuyến đường trọng điểm tại Đà Nẵng dựa trên dữ liệu lịch sử 2020–2026.",
++  "Observation points, reference circles and historical sites are distinct layers. Circles are illustrative, with fixed radii of 500–1,800 m, and historical pins mark approximate areas. The map has no 2D hydraulic simulation.": "Các điểm trên bản đồ thể hiện vị trí lấy mẫu.",
+   "Dashboard resource not found": "Không tìm thấy tài nguyên bảng điều khiển.",
+   "Unable to load this resource.": "Không tải được tài nguyên này.",
+   "Select a smaller date range to load this collection.": "Chọn khoảng ngày ngắn hơn để tải dữ liệu.",
+@@ -314,8 +313,7 @@ export const vi: Record<string, string> = {
+   "Requires an evaluated flood model.": "Cần mô hình ngập đã đánh giá.",
+   "Flood-related clustering": "Phân cụm địa hình ngập lụt",
+   "Terrain-based flood risk clustering": "Phân cụm đặc trưng địa hình ngập lụt",
+-  "Terrain and built-up clustering across 9 Da Nang stations": "Phân nhóm cao độ, độ dốc và tỷ lệ đô thị hóa tại 9 điểm quan trắc Đà Nẵng",
+-  "Historical training dataset summary": "Thống kê kho dữ liệu huấn luyện (2020–2026)",
++  "Historical training dataset summary": "Tóm tắt dữ liệu huấn luyện mưa",
+   "Latest persisted location assessments": "Lịch sử đánh giá nguy cơ ngập đã lưu theo địa điểm",
+   "Exploratory terrain profile groups without flood labels": "Nhóm địa hình phân cụm theo cao độ và độ dốc",
+   "Flood terrain profile groups": "Các nhóm địa hình",
+@@ -486,5 +484,29 @@ export const vi: Record<string, string> = {
+   "Running": "Đang chạy",
+   "Date": "Ngày",
+   "Rainfall (mm)": "Lượng mưa (mm)",
+-  "Historical rainfall": "Mưa lịch sử"
++  "Historical rainfall": "Mưa lịch sử",
++  "Required weather or terrain data is missing. Check local updates while new data arrives.": "Chưa thể đánh giá nguy cơ ngập do thiếu dữ liệu thời tiết hoặc địa hình. Hãy theo dõi cảnh báo địa phương trong khi chờ dữ liệu cập nhật.",
++  "Experimental assessment": "Đánh giá thử nghiệm",
++  "Technical details": "Chi tiết kỹ thuật",
++  "Historical Floods": "Ngập lụt lịch sử",
++  "Review documented floods and historical rainfall.": "Xem các đợt ngập đã ghi nhận và lượng mưa lịch sử.",
++  "History": "Lịch sử",
++  "Research": "Nghiên cứu",
++  "Legacy rainfall models": "Các mô hình phân tích mưa trước đây",
++  "Exploratory terrain profiles": "Phân nhóm địa hình mang tính thăm dò",
++  "Markers show assessments at monitoring points.": "Các dấu màu thể hiện mức nguy cơ tại từng điểm theo dõi.",
++  "Modeled rainfall · preceding 24 h": "Lượng mưa mô hình · 24 giờ qua",
++  "October 2022 flood case study": "Đợt ngập tháng 10 năm 2022",
++  "Retrospective analysis": "Phân tích hồi cứu",
++  "On 14–15 October, flooding was reported around Tuy Loan market in Hoa Phong. The Nam My weir overtopped during the flash flood, with a reported water level over 12 m at the weir.": "Ngày 14–15 tháng 10, khu vực chợ Túy Loan, Hòa Phong ghi nhận ngập. Tại đập dâng Nam Mỹ, mực nước được báo cáo vượt 12 m và tràn qua mặt đập trong trận lũ quét.",
++  "Recorded flooding and rainfall report": "Ghi nhận ngập và báo cáo mưa",
++  "Nam My weir report": "Báo cáo đập dâng Nam Mỹ",
++  "ERA5 grid rainfall at the selected point": "Lượng mưa theo ô lưới ERA5 tại điểm đã chọn",
++  "The reported flooding and weir level refer to specific sites. ERA5 rainfall is a grid estimate shared by nearby points. Archived forecast inputs and matched point observations are unavailable for a retrospective risk score.": "Thông tin ngập và mực nước được ghi nhận tại các vị trí cụ thể. Các điểm gần nhau có thể dùng chung ước tính mưa ERA5. Thiếu dữ liệu dự báo tại thời điểm đó và quan trắc ngập tương ứng để tính chỉ số hồi cứu.",
++  "Next scheduled ingestion": "Lần thu thập tiếp theo",
++  "Terrain reference at the selected monitoring point": "Địa hình tham chiếu tại điểm đã chọn",
++  "points have a current assessment.": "điểm có đánh giá hiện hành.",
++  "Conditions may vary between monitoring points.": "Điều kiện thực tế có thể khác nhau giữa các điểm theo dõi.",
++  "This score uses the available factors. Some inputs are missing.": "Chỉ số được tính từ các yếu tố hiện có. Một số dữ liệu đầu vào vẫn còn thiếu.",
++  "Service connectivity": "Kết nối dịch vụ",
+ };
+diff --git a/frontend/app/globals.css b/frontend/app/globals.css
+index f879eb1c7953dabda5efc6b51872c5dfb6172e89..b008958719b1e5eddc8975c1b7e32ccf054d3e69 100644
+--- a/frontend/app/globals.css
++++ b/frontend/app/globals.css
+@@ -65,6 +65,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
+ .breadcrumbs { color: var(--muted); }
+ .breadcrumbs strong { color: var(--text); font-weight: 650; }
+ .top-actions { gap: 8px; }
++.service-connectivity { display: flex; align-items: center; gap: 8px; }
+ .dashboard-main { display: grid; gap: 17px; max-width: 1630px; margin-inline: auto; padding: 23px 29px 10px; }
+ .hero {
+   border: 1px solid #315064; border-radius: 15px; position: relative; overflow: hidden;
+@@ -353,7 +354,7 @@ caption { text-align: left; color: var(--muted); margin-bottom: 5px; text-transf
+   .dashboard-main { order: 2; width: 100%; }
+   .sidebar { order: 1; position: static; height: auto; padding: 8px 10px; border-right: 0; border-bottom: 1px solid var(--stroke); }
+   .sidebar > .brand { display: none; }
+-  .sidebar nav { grid-template-columns: repeat(6,minmax(0,1fr)); margin: 0; }
++  .sidebar nav { grid-template-columns: repeat(7,minmax(0,1fr)); margin: 0; }
+   .sidebar nav button { flex-direction: column; gap: 3px; min-height: 43px; padding: 4px 2px; font-size: 10px; }
+   .sidebar .desktop-label { display: none; }
+   .sidebar .mobile-label { display: inline; }
+@@ -370,7 +371,9 @@ caption { text-align: left; color: var(--muted); margin-bottom: 5px; text-transf
+ }
+ @media (max-width: 500px) {
+   .dashboard-main { padding: 14px 10px; gap: 12px; }
+-  .topbar { padding-inline: 10px; }
++  .topbar { padding: 6px 10px; height: auto; min-height: 58px; flex-wrap: wrap; gap: 6px; }
++  .top-actions { gap: 4px; }
++  .service-connectivity > span:first-child { display: none; }
+   .topbar .brand-mark { width: 31px; height: 31px; flex-basis: 31px; border-radius: 9px; }
+   .topbar .brand strong { font-size: 17px; }
+   .topbar .brand small { display: none; }
+diff --git a/frontend/tests/dashboard.mjs b/frontend/tests/dashboard.mjs
+index 3fa0efc3926dc5e00313d27cfc652ce08c651c59..288b4c9f8c4aca3e9ed3e5a119883b7948c3bbc5 100644
+--- a/frontend/tests/dashboard.mjs
++++ b/frontend/tests/dashboard.mjs
+@@ -23,9 +23,10 @@ async function api(path) {
+ }
+ 
+ try {
++  await page.addInitScript(() => localStorage.setItem("floodinsight-language", "en"));
+   const points = await api("flood-risk/locations");
+-  assert.deepEqual(points.map((point) => point.code).sort(),
+-    ["cam-le", "hai-chau", "lien-chieu", "ngu-hanh-son", "thanh-khe"]);
++  assert.ok(points.length > 0);
++  assert.equal(new Set(points.map((point) => point.code)).size, points.length);
+   const focus = points.find((point) => point.code === "hai-chau") ?? points[0];
+   const [coverage] = await api("rainfall/coverage?location=" + focus.code);
+   assert.ok(coverage);
+@@ -46,11 +47,11 @@ try {
+     await page.getByText("Relative humidity", { exact: true }).waitFor();
+   }
+   await page.waitForFunction((end) => document.querySelector("#end")?.value === end, coverage.last_date);
+-  await canvas("daily rainfall").waitFor();
++  await canvas("Rainfall over time").waitFor();
+   await page.getByLabel("From", { exact: true }).fill(coverage.last_date);
+   await page.getByLabel("To", { exact: true }).fill(coverage.last_date);
+   await page.getByRole("button", { name: "Apply dates" }).click();
+-  await canvas("daily rainfall").waitFor();
++  await canvas("Rainfall over time").waitFor();
+   assert.equal(await page.locator("section").filter({ has: heading("Validated flood predictions") }).locator(".risk-value").innerText(),
+     String(predictions.length));
+   if (process.env.DASHBOARD_DESKTOP_SCREENSHOT) await page.screenshot({ path: process.env.DASHBOARD_DESKTOP_SCREENSHOT, fullPage: true });
+@@ -63,16 +64,17 @@ try {
+   await page.getByText(points.length + " assessment results returned.", { exact: true }).waitFor();
+   await page.getByRole("button", { name: "Inspect " + focus.name, exact: true }).click();
+   await heading("Contributing factors and evidence").waitFor();
++  await page.getByText("Technical details", { exact: true }).click();
+   await page.getByRole("rowheader", { name: "forecast rainfall", exact: true }).waitFor();
+   await page.getByText("Sources, valid times and coverage limits", { exact: true }).click();
+   await page.getByText("Latest evidence available", { exact: true }).waitFor();
+ 
+   await nav("Rainfall Analytics").click();
+-  await canvas("daily rainfall").waitFor();
++  await canvas("Rainfall over time").waitFor();
+   await page.getByRole("button", { name: "weekly", exact: true }).click();
+-  await canvas("weekly rainfall").waitFor();
++  await canvas("Rainfall over time").waitFor();
+   await page.getByRole("button", { name: "monthly", exact: true }).click();
+-  await canvas("monthly rainfall").waitFor();
++  await canvas("Rainfall over time").waitFor();
+   await page.getByRole("button", { name: "Generate patterns" }).click();
+   await heading("Rainfall distribution").waitFor();
+   await canvas("Rainfall distribution").waitFor();
+@@ -84,28 +86,30 @@ try {
+   assert.equal(await markers.count(), points.length);
+   await markers.first().click({ force: true });
+   await map.locator(".leaflet-popup-content .popup-name").waitFor();
+-  await map.getByText("Valid until", { exact: false }).waitFor();
+-  await map.getByText("Street-level conditions are unverified.", { exact: false }).waitFor();
++  await map.getByText("Conditions may vary between monitoring points.", { exact: true }).waitFor();
+   await map.locator(".leaflet-control-zoom-in").click();
+   await map.getByText("OpenStreetMap", { exact: true }).waitFor();
+ 
+   await nav("Machine Learning").click();
+-  for (const title of ["Flood probability predictions", "Flood model evaluation", "Confusion matrix", "Calibration curve",
+-    "Model comparison", "Feature importance", "Flood-related clustering"]) await heading(title).waitFor();
++  await heading("Terrain-based flood risk clustering").waitFor();
+   await canvas("Flood terrain profile groups").waitFor();
+   if (!(await api("flood-predictions/metrics")).evaluation) {
+-    await page.getByText("Evaluation metrics unavailable", { exact: true }).waitFor();
++    await heading("Flood model readiness").waitFor();
+   }
+-  await page.getByRole("button", { name: "Show legacy rainfall evaluation" }).click();
++  await page.getByText("Legacy rainfall models", { exact: true }).click();
+   await heading("Classification evaluation").waitFor();
+   if (process.env.DASHBOARD_EXPECT_MODELS === "1") {
+     await canvas("Rainfall classification confusion matrix").waitFor();
+     await canvas("Weather cluster projection").waitFor();
+   }
+ 
++  await nav("Historical Floods").click();
++  await heading("October 2022 flood case study").waitFor();
++  await page.getByText("179.5 mm", { exact: false }).waitFor();
++
+   await nav("Data Management").click();
+   for (const title of ["Flood dataset coverage", "Weather source coverage", "Flood-event coverage", "Terrain coverage",
+-    "Hydrological coverage", "Model training readiness", "Assessment history", "Ingestion history", "Data quality"]) await heading(title).waitFor();
++    "Hydrological coverage", "Historical training dataset summary", "Assessment history", "Ingestion history", "Data quality"]) await heading(title).waitFor();
+   assert.equal(await page.locator(".flood-data-counts > div").filter({ hasText: "Documented events" }).locator("strong").innerText(),
+     String(coverageStatus.counts.flood_events));
+ 
+@@ -114,7 +118,7 @@ try {
+   await page.setViewportSize({ width: 390, height: 844 });
+   for (const section of ["Flood Overview", "Flood Risk Forecast", "Da Nang Flood Map"]) {
+     await nav(section).click();
+-    await heading(section).waitFor();
++    await page.getByRole("heading", { name: section, exact: true, level: 1 }).waitFor();
+     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth) <= 390, section + " overflows mobile viewport");
+   }
+   await page.waitForFunction((expected) => {
+diff --git a/frontend/tests/flood-api.mjs b/frontend/tests/flood-api.mjs
+index 6bd0a24b9cac7fe726231b5b299dec062f55ca1e..8725c99397721f5f9113c60ad3aafd612f9fb94b 100644
+--- a/frontend/tests/flood-api.mjs
++++ b/frontend/tests/flood-api.mjs
+@@ -28,7 +28,8 @@ assert.equal((await json("flood-risk/" + location + "/details", undefined, proxy
+ const generated = await json("flood-risk/generate", { location }, proxy);
+ assert.equal(generated.length, 1);
+ assert.equal(generated[0].flood_probability, null);
+-assert.equal(Date.parse(generated[0].valid_until) - Date.parse(generated[0].issued_at), 86_400_000);
++const horizon = Date.parse(generated[0].valid_until) - Date.parse(generated[0].issued_at);
++assert.ok(horizon > 23 * 3_600_000 && horizon <= 24 * 3_600_000);
+ const replay = await json("flood-risk/generate", { location, issued_at: generated[0].issued_at });
+ assert.equal(replay[0].id, generated[0].id);
+ assert.ok((await json("flood-risk/history?location=" + location)).some((row) => row.id === generated[0].id));

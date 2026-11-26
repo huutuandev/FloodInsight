@@ -25,6 +25,11 @@ RASTERS = {
         "Copernicus_DSM_COG_10_N16_00_E108_00_DEM/Copernicus_DSM_COG_10_N16_00_E108_00_DEM.tif",
         "copernicus-dem-glo30", {"elevation", "surface_slope"},
     ),
+    "copernicus-dem-south": (
+        "https://copernicus-dem-30m.s3.amazonaws.com/"
+        "Copernicus_DSM_COG_10_N15_00_E108_00_DEM/Copernicus_DSM_COG_10_N15_00_E108_00_DEM.tif",
+        "copernicus-dem-glo30", {"elevation", "surface_slope"},
+    ),
     "worldcover": (
         "https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map/"
         "ESA_WorldCover_10m_2021_v200_N15E108_Map.tif",
@@ -65,7 +70,9 @@ def command(compose, module, *args, output=False):
 def import_rasters(compose, coverage):
     for name, (url, source, features) in RASTERS.items():
         existing = {(row["point"], row["feature"]) for row in coverage["terrain"] if row["source"] == source}
-        if all((point, feature) in existing for point in POINTS for feature in features):
+        south = {"hoa-vang", "hoa-khuong"}
+        expected = south if name == "copernicus-dem-south" else POINTS - south if name == "copernicus-dem" else POINTS
+        if all((point, feature) in existing for point in expected for feature in features):
             log("raster checkpoint", name)
             continue
         with TemporaryDirectory(prefix="floodinsight-raster-") as directory:
@@ -80,8 +87,9 @@ def import_rasters(compose, coverage):
                  "warehouse-service", "sh", "-ec",
                  "apt-get update -qq && apt-get install -yqq --no-install-recommends libexpat1 && "
                  "python -m pip install --quiet --target /tmp/flood-gis -r /tmp/requirements-gis.txt && "
-                 'PYTHONPATH=/tmp/flood-gis:/app python -m floodinsight_warehouse.flood_data raster "$1" /tiles/source.tif',
-                 "flood-raster", name])
+                 'PYTHONPATH=/tmp/flood-gis:/app python -m floodinsight_warehouse.flood_data raster "$1" /tiles/source.tif ${2:+$2}',
+                 "flood-raster", "copernicus-dem" if name == "copernicus-dem-south" else name,
+                 *(["--south-tile"] if name == "copernicus-dem-south" else [])])
 
 
 def restore(args):
@@ -103,7 +111,7 @@ def restore(args):
     flood_points = get("flood-risk/locations")
     coordinates = {row["code"]: (row["latitude"], row["longitude"]) for row in locations}
     flood_coordinates = {row["code"]: (row["latitude"], row["longitude"]) for row in flood_points}
-    if not POINTS <= coordinates.keys() or coordinates != flood_coordinates:
+    if coordinates != flood_coordinates:
         raise RuntimeError("Canonical sampling points disagree across the warehouse and flood API")
     log("locations", [row["code"] for row in flood_points])
 

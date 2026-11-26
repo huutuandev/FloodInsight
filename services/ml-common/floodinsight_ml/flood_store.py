@@ -24,42 +24,40 @@ QUERIES = {
               AND r.received_at <= :as_of AND r.payload->'units'->>'rain' = 'mm'
               AND f.rainfall_mm = CASE WHEN jsonb_typeof(r.payload->'values'->'rain') = 'number'
                   THEN round((r.payload->'values'->>'rain')::numeric, 3) END
-        ),
-        recent_fallback AS (
+        )
+        SELECT * FROM era5_hours ORDER BY location, hour
+    """,
+    "modeled_recent": """
+        WITH recent AS (
             SELECT DISTINCT ON (r.source_location_key, r.valid_at)
                    r.id, r.source_location_key AS location, d.code AS source,
                    (r.valid_at - interval '1 hour') AS hour,
                    receipt.received_at, r.payload->'grid' AS grid,
-                   CASE WHEN jsonb_typeof(r.payload->'values'->'rain') = 'number'
-                        THEN (r.payload->'values'->>'rain')::float8 END AS rain
+                   r.payload->'values' AS values, r.payload->'units' AS units,
+                   CASE WHEN jsonb_typeof(r.payload->'values'->'precipitation') = 'number'
+                        THEN (r.payload->'values'->>'precipitation')::float8 END AS rain
             FROM raw_weather_forecasts r
             JOIN data_sources d ON d.id = r.source_id
             JOIN forecast_snapshot_receipts receipt ON receipt.snapshot_id = r.id
-            WHERE d.code = :forecast AND r.valid_at > :history_start + interval '1 hour'
+            WHERE d.code = :forecast AND r.valid_at > :end - interval '72 hours'
               AND r.valid_at <= :end AND receipt.received_at <= :as_of
               AND r.payload->>'kind' = 'hourly' AND r.payload->>'interval_seconds' = '3600'
-              AND r.payload->'units'->>'rain' = 'mm'
-              AND NOT EXISTS (
-                  SELECT 1 FROM era5_hours e
-                  WHERE e.location = r.source_location_key AND e.hour = (r.valid_at - interval '1 hour')
-              )
+              AND r.payload->'units'->>'precipitation' = 'mm'
+              AND receipt.received_at >= :end - interval '6 hours'
             ORDER BY r.source_location_key, r.valid_at, receipt.received_at DESC, r.id DESC
         )
-        SELECT * FROM era5_hours
-        UNION ALL
-        SELECT * FROM recent_fallback
-        ORDER BY location, hour
+        SELECT * FROM recent ORDER BY location, hour
     """,
     "forecast": """
         SELECT r.id, receipt.run_id, r.source_location_key AS location, d.code AS source,
                receipt.received_at, r.valid_at, r.issued_at, r.payload->'grid' AS grid,
-               CASE WHEN jsonb_typeof(r.payload->'values'->'rain') = 'number'
-                    THEN (r.payload->'values'->>'rain')::float8 END AS rain
+               CASE WHEN jsonb_typeof(r.payload->'values'->(:forecast_variable)::text) = 'number'
+                    THEN (r.payload->'values'->>(:forecast_variable)::text)::float8 END AS rain
         FROM raw_weather_forecasts r JOIN data_sources d ON d.id = r.source_id
         JOIN forecast_snapshot_receipts receipt ON receipt.snapshot_id = r.id
         WHERE d.code = :forecast AND r.valid_at > :start AND r.valid_at <= :target_end
-          AND receipt.received_at <= :end AND r.payload->>'kind' = 'hourly'
-          AND r.payload->>'interval_seconds' = '3600' AND r.payload->'units'->>'rain' = 'mm'
+          AND receipt.received_at <= :receipt_end AND r.payload->>'kind' = 'hourly'
+          AND r.payload->>'interval_seconds' = '3600' AND r.payload->'units'->>(:forecast_variable)::text = 'mm'
         ORDER BY receipt.received_at, receipt.run_id, r.id
     """,
     "terrain": """
@@ -67,7 +65,7 @@ QUERIES = {
                a.retrieved_at AS available_at
         FROM flood_terrain_features f JOIN flood_dataset_assets a ON a.id = f.asset_id
         JOIN dim_location l ON l.id = f.location_id JOIN data_sources d ON d.id = a.source_id
-        WHERE a.retrieved_at <= :end AND f.latitude = l.latitude::float8 AND f.longitude = l.longitude::float8
+        WHERE a.retrieved_at <= :as_of AND f.latitude = l.latitude::float8 AND f.longitude = l.longitude::float8
           AND ((d.code = 'copernicus-dem-glo30' AND (f.feature, f.unit) IN
                (('elevation', 'm'), ('surface_slope', 'degree')))
             OR (d.code = 'esa-worldcover-2021-v200' AND (f.feature, f.unit) IN
@@ -123,18 +121,21 @@ GRID_INVENTORY = """
 """
 
 
-def read(execute, start, end, as_of, *, include_inventory=True):
+def read(execute, start, end, as_of, *, include_inventory=True, modeled_recent=False):
     params = dict(start=start, end=end, as_of=as_of, target_end=end + TARGET, era5=ERA5, forecast=FORECAST,
-                  history_start=start - ERA5_DELAY - 72 * HOUR, label_history_start=start - timedelta(days=365))
+                  receipt_end=as_of if modeled_recent else end,
+                  forecast_variable='precipitation' if modeled_recent else 'rain', history_start=start - ERA5_DELAY - 72 * HOUR, label_history_start=start - timedelta(days=365))
     points = list(execute("SELECT id, code, latitude, longitude FROM dim_location ORDER BY code", {}))
     inputs = defaultdict(lambda: defaultdict(list))
     evidence = []
     for kind, query in QUERIES.items():
+        if kind == "modeled_recent" and not modeled_recent:
+            continue
         for row in execute(query, params):
             row = dict(row)
-            if kind in ("rain", "forecast", "hydrology"):
+            if kind in ("rain", "modeled_recent", "forecast", "hydrology"):
                 cell = grid(row)
-                valid = row["hour"] + HOUR if kind == "rain" else row["valid_at"]
+                valid = row["hour"] + HOUR if kind in ("rain", "modeled_recent") else row["valid_at"]
                 row["weather_bin"] = (cell, valid) if cell else None
             if kind == "observations":
                 if row["available_at"] > as_of:
@@ -145,20 +146,21 @@ def read(execute, start, end, as_of, *, include_inventory=True):
     return points, inputs, evidence, grids
 
 
-def postgres_read(conn, start, end, as_of, *, include_inventory=True):
+def postgres_read(conn, start, end, as_of, *, include_inventory=True, modeled_recent=False):
     def execute(sql, params):
         query = re.sub(r"(?<!:):([a-z_][a-z_0-9]*)", r"%(\1)s", sql)
         return conn.execute(query, params)
-    return read(execute, start, end, as_of, include_inventory=include_inventory)
+    return read(execute, start, end, as_of, include_inventory=include_inventory, modeled_recent=modeled_recent)
 
 
-def current_features(conn, issuance):
-    points, inputs, _, _ = postgres_read(conn, issuance, issuance, issuance, include_inventory=False)
+def current_features(conn, issuance, *, modeled_recent=False, evidence_at=None):
+    points, inputs, _, _ = postgres_read(conn, issuance, issuance, evidence_at or issuance, include_inventory=False,
+                                         modeled_recent=modeled_recent)
     for point in points:
         source = inputs[point["code"]]
-        features = {name: source[name] for name in QUERIES}
+        features = {name: source[name] for name in QUERIES if modeled_recent or name != 'modeled_recent'}
         features["hydrology"] = source["hydrology"] + inputs[None]["hydrology"]
-        yield make_row(point, issuance, issuance, "operational", features, include_validity=True)
+        yield make_row(point, issuance, issuance, "operational", features, include_validity=True, evidence_at=evidence_at)
 
 
 def resolve_issuance(value, now=None):

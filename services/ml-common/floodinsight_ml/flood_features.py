@@ -28,6 +28,8 @@ SCHEMA = (
         "offshore_sea_level_msl_m": "m", "reported_flood_events_prev_365d": "count",
     }
 )
+LIVE_SOIL = {f"soil_moisture_{top}_to_{bottom}cm": "m\u00b3/m\u00b3"
+             for top, bottom in ((0, 1), (1, 3), (3, 9), (9, 27), (27, 81))}
 TERRAIN = {
     ("elevation", "m"): "elevation_m",
     ("surface_slope", "degree"): "surface_slope_deg",
@@ -142,7 +144,8 @@ def validate_holdout(training, evaluation, grid_groups):
         raise ValueError("Holdout spans overlap a documented flood episode")
 
 
-def make_row(point, issuance, as_of, mode, inputs, *, include_validity=False):
+def make_row(point, issuance, as_of, mode, inputs, *, include_validity=False, evidence_at=None):
+    evidence_at = evidence_at or issuance
     features = dict.fromkeys(SCHEMA)
     provenance = {}
     weather_bins = set()
@@ -164,16 +167,40 @@ def make_row(point, issuance, as_of, mode, inputs, *, include_validity=False):
                 if row.get("weather_bin"):
                     weather_bins.add(row["weather_bin"])
 
+    live_history = {}
+    modeled = inputs.get("modeled_recent", ())
+    for row in modeled:
+        if row["weather_bin"] and row["received_at"] <= evidence_at and measurement(row["rain"]) is not None:
+            live_history[row["hour"]] = row | {"available_at": max(row["hour"] + HOUR, row["received_at"])}
     history = {}
     for row in inputs["rain"]:
         available = archive_available_at(row["hour"] + HOUR, row["received_at"], mode)
         if available is not None and available <= issuance and measurement(row["rain"]) is not None:
             history[row["hour"]] = row | {"available_at": available}
+    for name, unit in LIVE_SOIL.items():
+        candidates = [
+            row for row in modeled if issuance - 6 * HOUR <= row["hour"] + HOUR <= issuance
+            and row["received_at"] <= evidence_at and row["units"].get(name) == unit
+            and measurement(row["values"].get(name), 0, 1) is not None
+        ]
+        if candidates:
+            row = max(candidates, key=lambda item: item["hour"])
+            put(name, row["values"][name], [row | {"available_at": max(row["hour"] + HOUR, row["received_at"])}])
+    def recent_window(hours):
+        start = issuance - hours * HOUR
+        archived = window(history, start, hours)
+        if archived:
+            return archived
+        recent = window(live_history, start, hours)
+        if recent and len({row["weather_bin"][0] for row in recent}) == 1:
+            return recent
+        return None
+
     for hours in LOOKBACKS:
-        rows = window(history, issuance - hours * HOUR, hours)
+        rows = recent_window(hours)
         if rows:
             put(f"rain_prev_{hours}h_mm", math.fsum(row["rain"] for row in rows), rows)
-    rows = window(history, issuance - TARGET, 24)
+    rows = recent_window(24)
     if rows:
         rain = [row["rain"] for row in rows]
         wet = [value for value in rain if value >= WET_MM]
@@ -192,23 +219,23 @@ def make_row(point, issuance, as_of, mode, inputs, *, include_validity=False):
     vintages = defaultdict(dict)
     if mode == "operational":
         for row in inputs["forecast"]:
-            if (row["received_at"] <= issuance and (row["issued_at"] is None
+            if (issuance - 6 * HOUR <= row["received_at"] <= evidence_at and (row["issued_at"] is None
                     or row["issued_at"] <= row["received_at"])
                     and issuance < row["valid_at"] <= issuance + TARGET):
                 vintage = (row["received_at"], row["run_id"])
                 vintages[vintage][row["valid_at"] - HOUR] = row
-    if vintages:
-        receipt, run = max(vintages)
-        for hours in FORECASTS:
+    for hours in FORECASTS:
+        for receipt, run in sorted(vintages, reverse=True):
             rows = window(vintages[receipt, run], issuance, hours)
             if (rows and all(measurement(row["rain"]) is not None for row in rows)
                     and len({row["weather_bin"][0] for row in rows if row["weather_bin"]}) == 1
                     and all(row["weather_bin"] for row in rows)):
                 put(f"forecast_rain_next_{hours}h_mm", math.fsum(row["rain"] for row in rows),
                     [row | {"available_at": receipt} for row in rows])
+                break
 
     for row in inputs["terrain"]:
-        if row["available_at"] <= issuance:
+        if row["available_at"] <= evidence_at:
             name = TERRAIN[row["feature"], row["unit"]]
             minimum, maximum = {
                 "elevation_m": (-12000, 9000), "surface_slope_deg": (0, 90),
@@ -223,7 +250,7 @@ def make_row(point, issuance, as_of, mode, inputs, *, include_validity=False):
     for row in inputs["hydrology"]:
         if row["variable"] == "soil_moisture_0_to_7cm" and cutoff - TARGET < row["valid_at"] <= cutoff:
             available = archive_available_at(row["valid_at"], row["available_at"], mode)
-            if available <= issuance and measurement(row["value"], 0, 1) is not None:
+            if available is not None and available <= evidence_at and measurement(row["value"], 0, 1) is not None:
                 soil.append(row | {"available_at": available})
         if (mode == "operational" and row["variable"] == "sea_level_height_msl"
                 and issuance - 6 * HOUR < row["valid_at"] <= issuance
@@ -242,7 +269,8 @@ def make_row(point, issuance, as_of, mode, inputs, *, include_validity=False):
         put("reported_flood_events_prev_365d", len({row["event_key"] for row in previous}), previous)
     return {
         "location": point["code"], "latitude": float(point["latitude"]), "longitude": float(point["longitude"]),
-        "mode": mode, "issued_at": issuance, "target_end": issuance + TARGET,
+        "mode": mode, "issued_at": evidence_at, "target_end": issuance + TARGET,
+        "uses_operational_precipitation": "modeled_recent" in inputs,
         "features": features, "provenance": provenance, "weather_bins": sorted(weather_bins),
         "label": target(point, inputs["observations"], issuance, as_of),
     }

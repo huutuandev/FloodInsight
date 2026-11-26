@@ -48,7 +48,8 @@ class TestFloodRisk(TestCase):
     def test_only_noncritical_missing_can_produce_a_limited_index(self):
         result = assess(feature_row(soil_moisture_delayed=None), self.config)
         self.assertEqual(result["assessment_status"], "limited")
-        self.assertEqual(result["risk_index"], 50)
+        self.assertEqual(result["risk_index"], 45)
+        self.assertEqual(result["method_version"], "flood-risk-v1-limited")
         self.assertIsNone(result["factors"]["soil_wetness"]["contribution_points"])
         self.assertEqual(result["missing_features"], ["soil_moisture_delayed"])
 
@@ -111,7 +112,7 @@ class TestFloodRiskIntegration(TestCase):
         stored = self.call(path + "?location=hai-chau")
         self.assertIn(saved["id"], [row["id"] for row in stored])
         with self.assertRaises(HTTPError) as error:
-            self.call(path, payload | {"issued_at": "2026-11-25T14:01:00Z"})
+            self.call(path, payload | {"issued_at": "2099-11-25T14:01:00Z"})
         self.assertEqual(error.exception.code, 422)
 
     def test_terrain_profiles_are_exploratory(self):

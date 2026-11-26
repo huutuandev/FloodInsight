@@ -40,14 +40,20 @@ services:
       FLOODINSIGHT_INGESTION_INTERVAL_SECONDS: ${FLOODINSIGHT_INGESTION_INTERVAL_SECONDS:-300}
       FLOODINSIGHT_INGESTION_TIMEOUT_SECONDS: ${FLOODINSIGHT_INGESTION_TIMEOUT_SECONDS:-12}
       FLOODINSIGHT_INGESTION_MAX_ATTEMPTS: ${FLOODINSIGHT_INGESTION_MAX_ATTEMPTS:-3}
+      FLOODINSIGHT_INGESTION_PAST_HOURS: ${FLOODINSIGHT_INGESTION_PAST_HOURS:-72}
+      FLOODINSIGHT_INGESTION_PREDICTION_URL: http://prediction-service:8000
+      FLOODINSIGHT_INGESTION_WAREHOUSE_URL: http://warehouse-service:8000
+      FLOODINSIGHT_INGESTION_SOIL_INTERVAL_SECONDS: ${FLOODINSIGHT_INGESTION_SOIL_INTERVAL_SECONDS:-3600}
       FLOODINSIGHT_INGESTION_FORECAST_HOURS: ${FLOODINSIGHT_INGESTION_FORECAST_HOURS:-48}
       <<: *postgres-environment
       POSTGRES_HOST: postgres
     ports:
       - "127.0.0.1:${INGESTION_PORT:-8001}:8000"
     depends_on:
-      warehouse-migrate:
-        condition: service_completed_successfully
+      warehouse-service:
+        condition: service_healthy
+      prediction-service:
+        condition: service_healthy
 
   warehouse-migrate:
     <<: *runtime

@@ -1,6 +1,7 @@
 """Exploratory clustering of complete point-level terrain profiles."""
 
 from collections import Counter
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -43,11 +44,12 @@ def profiles(rows, count):
 @router.get("/flood-profiles")
 @warehouse_errors
 def flood_profiles(issued_at: AwareDatetime | None = None, clusters: Annotated[int, Query(ge=2, le=5)] = 2):
+    now = datetime.now(timezone.utc)
     try:
-        issuance = resolve_issuance(issued_at)
+        issuance = resolve_issuance(issued_at, now=now)
     except ValueError as exc:
         raise DataUnavailable(str(exc)) from exc
     with connect() as conn:
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        rows = list(current_features(conn, issuance))
-    return profiles(rows, clusters) | {"issued_at": issuance}
+        rows = list(current_features(conn, issuance, evidence_at=now if issued_at is None else issuance))
+    return profiles(rows, clusters) | {"issued_at": now if issued_at is None else issuance}
