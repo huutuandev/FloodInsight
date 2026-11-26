@@ -30,6 +30,7 @@ export type Markers = {
     dashed?: boolean;
   }[];
   focusedRoad?: string;
+  onSelectRoad?: (id: string) => void;
   expanded?: boolean;
   fitNonce?: number;
 };
@@ -76,7 +77,7 @@ function View({ points, selected, compact, flood, roadPath, roadLat, roadLng, ro
 }
 
 export default function StationMap({ points, selected, focused, onSelect, latest, weather, compact, floodMarkers,
-  showAreas, zones, roads, focusedRoad, expanded, fitNonce }: Markers) {
+  showAreas, zones, roads, focusedRoad, onSelectRoad, expanded, fitNonce }: Markers) {
   const t = useText();
   const [tileError, setTileError] = useState(false);
   const coast = useQuery({
@@ -164,12 +165,13 @@ export default function StationMap({ points, selected, focused, onSelect, latest
             <Polyline positions={road.path} interactive={false}
               pathOptions={{ color: "#0f172a", weight: isFocused ? 13 : 9.5, opacity: isFocused ? 0.85 : 0.55, lineCap: "round", lineJoin: "round" }} />
             <Polyline positions={road.path}
+              eventHandlers={onSelectRoad ? { click: () => onSelectRoad(road.id) } : undefined}
               pathOptions={{
                 color: road.color, weight: isFocused ? 8.5 : 6, opacity: isFocused ? 1 : 0.94,
                 lineCap: "round", lineJoin: "round", dashArray: road.dashed ? "8 6" : undefined,
               }}>
               <Tooltip sticky>{road.name}</Tooltip>
-              <Popup maxHeight={300}>{road.content}</Popup>
+              <Popup maxHeight={320}>{road.content}</Popup>
             </Polyline>
           </>}
           {startPt && <CircleMarker center={startPt} radius={3.5} interactive={false}
@@ -177,9 +179,10 @@ export default function StationMap({ points, selected, focused, onSelect, latest
           {endPt && <CircleMarker center={endPt} radius={3.5} interactive={false}
             pathOptions={{ color: "#ffffff", weight: 1.5, fillColor: road.color, fillOpacity: 1 }} />}
           <CircleMarker center={road.coordinates} radius={isFocused ? 9 : 5.5}
+            eventHandlers={onSelectRoad ? { click: () => onSelectRoad(road.id) } : undefined}
             pathOptions={{ color: "#ffffff", weight: 2, fillColor: road.color, fillOpacity: 1, className: "flood-historical-pin" }}>
             <Tooltip key={isFocused ? "selected" : "hover"} permanent={isFocused} direction="top" offset={[0, -10]}>{road.name}</Tooltip>
-            <Popup maxHeight={300}>{road.content}</Popup>
+            <Popup maxHeight={320}>{road.content}</Popup>
           </CircleMarker>
         </div>;
       })}
