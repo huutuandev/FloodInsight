@@ -107,6 +107,7 @@ services:
     command: ["python", "-m", "uvicorn", "floodinsight_clustering.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/floodinsight_clustering", "--log-config", "/etc/floodinsight/logging.json"]
     volumes:
       - ./services/clustering-service/floodinsight_clustering:/app/floodinsight_clustering:ro
+      - ./services/ml-common/floodinsight_ml:/app/floodinsight_ml:ro
       - clustering-models:/models
     environment:
       FLOODINSIGHT_CLUSTERING_ENVIRONMENT: ${FLOODINSIGHT_CLUSTERING_ENVIRONMENT:-development}
@@ -127,6 +128,7 @@ services:
     command: ["python", "-m", "uvicorn", "floodinsight_prediction.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/floodinsight_prediction", "--log-config", "/etc/floodinsight/logging.json"]
     volumes:
       - ./services/prediction-service/floodinsight_prediction:/app/floodinsight_prediction:ro
+      - ./services/ml-common/floodinsight_ml:/app/floodinsight_ml:ro
       - prediction-models:/models
     environment:
       FLOODINSIGHT_PREDICTION_ENVIRONMENT: ${FLOODINSIGHT_PREDICTION_ENVIRONMENT:-development}
@@ -147,6 +149,7 @@ services:
     command: ["python", "-m", "uvicorn", "floodinsight_classification.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/floodinsight_classification", "--log-config", "/etc/floodinsight/logging.json"]
     volumes:
       - ./services/classification-service/floodinsight_classification:/app/floodinsight_classification:ro
+      - ./services/ml-common/floodinsight_ml:/app/floodinsight_ml:ro
       - classification-models:/models
     environment:
       FLOODINSIGHT_CLASSIFICATION_ENVIRONMENT: ${FLOODINSIGHT_CLASSIFICATION_ENVIRONMENT:-development}
