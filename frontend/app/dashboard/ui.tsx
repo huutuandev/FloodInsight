@@ -1,5 +1,7 @@
 "use client";
 
+import { useText } from "./language";
+
 import { AlertCircle, ChartNoAxesCombined, ChevronLeft, ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { ApiError } from "./data";
@@ -16,31 +18,35 @@ export function Panel({ title, subtitle, action, children, className = "" }: {
 export function Empty({ title = "No records for this selection", detail = "Try another location or date range." }: {
   title?: string; detail?: string;
 }) {
+  const t = useText();
   return <div className="empty-state"><span className="empty-icon"><ChartNoAxesCombined size={23} /></span>
-    <strong>{title}</strong><p>{detail}</p></div>;
+    <strong>{t(title)}</strong><p>{t(detail)}</p></div>;
 }
 
 export function Loading({ compact = false }: { compact?: boolean }) {
-  return <div className={compact ? "loading compact" : "loading"} role="status" aria-label="Loading">
+  const t = useText();
+  return <div className={compact ? "loading compact" : "loading"} role="status" aria-label={t("Loading")}>
     <span /><span /><span />
   </div>;
 }
 
 export function QueryError({ error, retry }: { error: Error; retry: () => void }) {
+  const t = useText();
   return <div className="error-state" role="alert"><AlertCircle size={18} />
-    <div><strong>Could not load data</strong><p>{error.message}</p></div>
-    <button className="button secondary" onClick={retry}>Retry</button></div>;
+    <div><strong>{t("Could not load data")}</strong><p>{t(error.message)}</p></div>
+    <button className="button secondary" onClick={retry}>{t("Retry")}</button></div>;
 }
 
 export function Resource<T>({ query, children, empty, missingModel = false }: {
   query: { isPending: boolean; error: Error | null; data?: T; refetch: () => unknown };
   children: (data: T) => ReactNode; empty?: ReactNode; missingModel?: boolean;
 }) {
+  const t = useText();
   if (query.isPending) return <Loading />;
   if (query.error) {
     if (missingModel && query.error instanceof ApiError && query.error.status === 404
       && query.error.message === "Train or select an existing model version") {
-      return <Empty title="No registered model" detail="Results appear here when a trained model is registered in the gateway." />;
+      return <Empty title={t("No registered model")} detail={t("Results appear here when a trained model is registered in the gateway.")} />;
     }
     return <QueryError error={query.error} retry={() => void query.refetch()} />;
   }
@@ -51,19 +57,21 @@ export function Resource<T>({ query, children, empty, missingModel = false }: {
 export function Pager({ offset, limit, more, setOffset }: {
   offset: number; limit: number; more: boolean; setOffset: (value: number) => void;
 }) {
+  const t = useText();
   return <div className="pager">
-    <button className="icon-button" aria-label="Previous page" disabled={!offset}
+    <button className="icon-button" aria-label={t("Previous page")} disabled={!offset}
       onClick={() => setOffset(Math.max(0, offset - limit))}><ChevronLeft size={16} /></button>
-    <span>Page {Math.floor(offset / limit) + 1}</span>
-    <button className="icon-button" aria-label="Next page" disabled={!more}
+    <span>{t("Page")} {Math.floor(offset / limit) + 1}</span>
+    <button className="icon-button" aria-label={t("Next page")} disabled={!more}
       onClick={() => setOffset(offset + limit)}><ChevronRight size={16} /></button>
   </div>;
 }
 
 export function StatePill({ status }: { status: string }) {
+  const t = useText();
   const tone = ["ok", "succeeded"].includes(status) ? "good" :
     ["failed", "degraded", "unavailable"].includes(status) ? "warn" : "neutral";
-  const label: Record<string, string> = { ok: "Operational", succeeded: "Succeeded",
-    failed: "Failed", degraded: "Degraded", unavailable: "Unavailable", running: "Running" };
-  return <span className={"pill " + tone}><i />{label[status] ?? status}</span>;
+  const label: Record<string, string> = { ok: t("Operational"), succeeded: t("Succeeded"),
+    failed: t("Failed"), degraded: t("Degraded"), unavailable: t("Unavailable"), running: t("Running") };
+  return <span className={"pill " + tone}><i />{label[status] ?? t(status)}</span>;
 }

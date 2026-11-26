@@ -15,7 +15,10 @@ from recover_dashboard import APIError, api, process, span
 
 
 ROOT = Path(__file__).resolve().parents[1]
-POINTS = {"cam-le", "hai-chau", "lien-chieu", "ngu-hanh-son", "thanh-khe"}
+POINTS = {
+    "cam-le", "hai-chau", "hoa-bac", "hoa-khuong", "hoa-vang",
+    "lien-chieu", "ngu-hanh-son", "son-tra", "thanh-khe",
+}
 RASTERS = {
     "copernicus-dem": (
         "https://copernicus-dem-30m.s3.amazonaws.com/"

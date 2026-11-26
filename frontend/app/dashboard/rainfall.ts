@@ -4,7 +4,7 @@ import type { DateRange, Rain } from "./data";
 export type Period = "daily" | "weekly" | "monthly";
 export const periods: Period[] = ["daily", "weekly", "monthly"];
 
-export function rainfallOption(rows: Rain[], range: DateRange, period: Period): EChartsOption {
+export function rainfallOption(rows: Rain[], range: DateRange, period: Period, t: (text: string) => string = (text) => text): EChartsOption {
   const byDate = new Map(rows.map((row) => [row.period_start, row.rainfall_total_mm]));
   const cursor = new Date(range.start_date + "T00:00:00Z");
   const end = new Date(range.end_date + "T00:00:00Z");
@@ -19,10 +19,10 @@ export function rainfallOption(rows: Rain[], range: DateRange, period: Period): 
   }
   return {
     tooltip: { trigger: "axis" },
-    dataset: { dimensions: ["Date", "Rainfall (mm)"], source: points },
+    dataset: { dimensions: [t("Date"), t("Rainfall (mm)")], source: points },
     xAxis: { type: "category", boundaryGap: false },
     yAxis: { type: "value", name: "mm" },
-    series: [{ type: "line", name: "Historical rainfall", connectNulls: false, showSymbol: true,
+    series: [{ type: "line", name: t("Historical rainfall"), connectNulls: false, showSymbol: true,
       symbolSize: 5, lineStyle: { width: 2.5 }, areaStyle: { opacity: .12 }, encode: { x: 0, y: 1 } }],
   };
 }

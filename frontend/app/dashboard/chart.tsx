@@ -9,16 +9,28 @@ import {
   TooltipComponent, VisualMapComponent,
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
+import { useLanguage } from "./language";
+import { vi } from "./vi";
 
 registerCharts([BarChart, HeatmapChart, LineChart, ScatterChart, AriaComponent, DatasetComponent,
   DataZoomComponent, GridComponent, LegendComponent, TooltipComponent, VisualMapComponent, CanvasRenderer]);
 
 type Theme = "dark" | "light";
 
+function translateChart(value: unknown, key = ""): unknown {
+  if (typeof value === "string") return ["name", "text", "data", "dimensions"].includes(key) ? vi[value] ?? value : value;
+  if (Array.isArray(value)) return value.map(item => translateChart(item, key));
+  if (value && typeof value === "object") return Object.fromEntries(
+    Object.entries(value).map(([name, item]) => [name, translateChart(item, name)]),
+  );
+  return value;
+}
+
 export function Chart({ option, label, theme, compact = false }: {
   option: EChartsOption; label: string; theme: Theme; compact?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const language = useLanguage();
   const chart = useRef<ECharts | null>(null);
   useEffect(() => {
     if (!host.current) return;
@@ -42,7 +54,7 @@ export function Chart({ option, label, theme, compact = false }: {
       splitLine: { lineStyle: { color: grid } },
       ...(value as object ?? {}),
     });
-    chart.current?.setOption({
+    const config = {
       ...option,
       aria: { enabled: true, label: { description: label } },
       animation: !matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -61,8 +73,9 @@ export function Chart({ option, label, theme, compact = false }: {
       ...(zoom ? { dataZoom: [{ type: "inside", xAxisIndex: 0, zoomOnMouseWheel: "ctrl" },
         ...(!compact ? [{ type: "slider", height: 18, bottom: 8, xAxisIndex: 0,
                          textStyle: { color: muted }, borderColor: grid }] : [])] } : {}),
-    }, { notMerge: true });
-  }, [compact, label, option, theme]);
+    };
+    chart.current?.setOption(language === "vi" ? translateChart(config) as EChartsOption : config, { notMerge: true });
+  }, [compact, label, language, option, theme]);
   return <div ref={host} role="img" aria-label={label} className={compact ? "chart chart-compact" : "chart"} />;
 }
 

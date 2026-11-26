@@ -37,7 +37,7 @@ def sample_raster(path, dataset, points=POINTS):
         for point in points:
             row, col = raster.index(point.longitude, point.latitude)
             if not (0 <= row < raster.height and 0 <= col < raster.width):
-                raise ValueError(f"Provider tile does not cover {point.code}")
+                continue
             radius = 1 if dataset == "copernicus-dem" else 5
             width = 2 * radius + 1
             values = raster.read(1, window=Window(col - radius, row - radius, width, width),

@@ -28,6 +28,10 @@ export type Classification = {
   location: string; target_date: string; issued_at: string; label: string;
   confidence: number | null; probabilities: Record<string, number>;
 };
+export type ProviderForecast = {
+  location: string; source: string; valid_at: string; issued_at: string | null;
+  received_at: string; payload: { model?: string; values?: Record<string, number | null> };
+};
 export type Evaluation = {
   version: string;
   scope?: { availability?: string };
@@ -94,12 +98,20 @@ export function useCollection<T>(path: string, params: Params, enabled = true) {
     queryFn: async ({ signal }) => {
       const all: T[] = [];
       const limit = 500;
-      for (let offset = 0; offset <= 1_000_000; offset += limit) {
-        const page = await request<T[]>(path, { ...params, limit, offset }, signal);
-        all.push(...page.data);
-        if (!page.meta?.has_more) return all;
+      const windows = path.startsWith("rainfall/") && typeof params.start_date === "string" && typeof params.end_date === "string"
+        ? rainfallWindows({ start_date: params.start_date, end_date: params.end_date }) : [params];
+      for (const window of windows) {
+        for (let offset = 0; ; offset += limit) {
+          if (offset > 1_000_000) throw new Error("Select a smaller date range to load this collection.");
+          const page = await request<T[]>(path, { ...params, ...window, limit, offset }, signal);
+          all.push(...page.data);
+          if (!page.meta?.has_more) break;
+        }
       }
-      throw new Error("Select a smaller date range to load this collection.");
+      return windows.length === 1 ? all : [...new Map(all.map(row => {
+        const rain = row as Rain;
+        return [JSON.stringify([rain.location, rain.source, rain.period_start]), row];
+      })).values()];
     },
   });
 }
@@ -135,10 +147,26 @@ export type RainfallCoverage = { location: string; source: string; first_date: s
 
 export function recentCoveredRange(coverage: RainfallCoverage | undefined, fallback: DateRange): DateRange {
   if (!coverage) return fallback;
-  const first = new Date(coverage.last_date + "T00:00:00Z");
-  first.setUTCDate(first.getUTCDate() - 29);
   return {
-    start_date: [coverage.first_date, first.toISOString().slice(0, 10)].sort()[1],
-    end_date: coverage.last_date,
+    start_date: coverage.first_date || fallback.start_date,
+    end_date: coverage.last_date || fallback.end_date,
   };
+}
+
+export function coveredPreset(coverage: DateRange, days: number): DateRange {
+  const start = new Date(coverage.end_date + "T00:00:00Z");
+  start.setUTCDate(start.getUTCDate() - days + 1);
+  return { start_date: [coverage.start_date, start.toISOString().slice(0, 10)].sort()[1], end_date: coverage.end_date };
+}
+
+function rainfallWindows(range: DateRange): DateRange[] {
+  const windows: DateRange[] = [];
+  let remainder = range;
+  while ((Date.parse(remainder.end_date) - Date.parse(remainder.start_date)) / 86_400_000 >= 3660) {
+    const window = coveredPreset(remainder, 3660);
+    windows.push(window);
+    const priorDay = new Date(Date.parse(window.start_date) - 86_400_000);
+    remainder = { ...range, end_date: priorDay.toISOString().slice(0, 10) };
+  }
+  return [...windows, remainder];
 }

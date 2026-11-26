@@ -12,18 +12,43 @@ FORECAST = "open-meteo-forecast-api"
 
 QUERIES = {
     "rain": """
-        SELECT r.id, l.code AS location, d.code AS source, f.hour_start_utc AS hour,
-               r.received_at, r.payload->'grid' AS grid, f.rainfall_mm::float8 AS rain
-        FROM fact_weather_hourly f JOIN dim_location l ON l.id = f.location_id
-        JOIN dim_weather_source s ON s.id = f.weather_source_id
-        JOIN data_sources d ON d.id = s.data_source_id
-        JOIN raw_weather_observations r ON r.source_id = d.id AND r.source_location_key = l.code
-            AND r.valid_at = f.hour_start_utc + interval '1 hour'
-        WHERE d.code = :era5 AND f.hour_start_utc >= :history_start AND f.hour_start_utc < :end
-          AND r.received_at <= :as_of AND r.payload->'units'->>'rain' = 'mm'
-          AND f.rainfall_mm = CASE WHEN jsonb_typeof(r.payload->'values'->'rain') = 'number'
-              THEN round((r.payload->'values'->>'rain')::numeric, 3) END
-        ORDER BY l.code, f.hour_start_utc
+        WITH era5_hours AS (
+            SELECT r.id, l.code AS location, d.code AS source, f.hour_start_utc AS hour,
+                   r.received_at, r.payload->'grid' AS grid, f.rainfall_mm::float8 AS rain
+            FROM fact_weather_hourly f JOIN dim_location l ON l.id = f.location_id
+            JOIN dim_weather_source s ON s.id = f.weather_source_id
+            JOIN data_sources d ON d.id = s.data_source_id
+            JOIN raw_weather_observations r ON r.source_id = d.id AND r.source_location_key = l.code
+                AND r.valid_at = f.hour_start_utc + interval '1 hour'
+            WHERE d.code = :era5 AND f.hour_start_utc >= :history_start AND f.hour_start_utc < :end
+              AND r.received_at <= :as_of AND r.payload->'units'->>'rain' = 'mm'
+              AND f.rainfall_mm = CASE WHEN jsonb_typeof(r.payload->'values'->'rain') = 'number'
+                  THEN round((r.payload->'values'->>'rain')::numeric, 3) END
+        ),
+        recent_fallback AS (
+            SELECT DISTINCT ON (r.source_location_key, r.valid_at)
+                   r.id, r.source_location_key AS location, d.code AS source,
+                   (r.valid_at - interval '1 hour') AS hour,
+                   receipt.received_at, r.payload->'grid' AS grid,
+                   CASE WHEN jsonb_typeof(r.payload->'values'->'rain') = 'number'
+                        THEN (r.payload->'values'->>'rain')::float8 END AS rain
+            FROM raw_weather_forecasts r
+            JOIN data_sources d ON d.id = r.source_id
+            JOIN forecast_snapshot_receipts receipt ON receipt.snapshot_id = r.id
+            WHERE d.code = :forecast AND r.valid_at > :history_start + interval '1 hour'
+              AND r.valid_at <= :end AND receipt.received_at <= :as_of
+              AND r.payload->>'kind' = 'hourly' AND r.payload->>'interval_seconds' = '3600'
+              AND r.payload->'units'->>'rain' = 'mm'
+              AND NOT EXISTS (
+                  SELECT 1 FROM era5_hours e
+                  WHERE e.location = r.source_location_key AND e.hour = (r.valid_at - interval '1 hour')
+              )
+            ORDER BY r.source_location_key, r.valid_at, receipt.received_at DESC, r.id DESC
+        )
+        SELECT * FROM era5_hours
+        UNION ALL
+        SELECT * FROM recent_fallback
+        ORDER BY location, hour
     """,
     "forecast": """
         SELECT r.id, receipt.run_id, r.source_location_key AS location, d.code AS source,

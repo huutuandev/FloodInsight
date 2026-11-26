@@ -30,13 +30,23 @@ def outcomes(rows):
 
 
 def candidates():
-    return {
+    models = {
         "logistic_regression": make_pipeline(StandardScaler(), LogisticRegression(class_weight="balanced", max_iter=1000)),
         "random_forest": RandomForestClassifier(n_estimators=200, min_samples_leaf=10, n_jobs=2,
                                                class_weight="balanced_subsample", random_state=42),
         "hist_gradient_boosting": HistGradientBoostingClassifier(max_iter=150, early_stopping=False,
                                                                  class_weight="balanced", random_state=42),
     }
+    try:
+        from xgboost import XGBClassifier
+        models["xgboost"] = XGBClassifier(
+            n_estimators=300, learning_rate=0.04, max_depth=5, subsample=0.8,
+            colsample_bytree=0.8, min_child_weight=3, tree_method="hist",
+            eval_metric="logloss", random_state=42, n_jobs=2,
+        )
+    except ImportError:
+        pass
+    return models
 
 
 def logit(prob):
