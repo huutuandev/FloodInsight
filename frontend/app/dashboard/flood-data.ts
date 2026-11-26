@@ -1,4 +1,16 @@
 import type { Location } from "./data";
+import haiChauOsm from "./hai-chau-corridors.json";
+
+type OsmCorridorEntry = { path: [number, number][]; coordinates: [number, number]; osm_street: string; elevation_m: number };
+const osmCorridors = haiChauOsm as unknown as Record<string, OsmCorridorEntry>;
+function osmRoad(id: string, fallbackCoords: [number, number], fallbackPath: [number, number][]) {
+  const entry = osmCorridors[id];
+  return {
+    coordinates: entry?.coordinates ?? fallbackCoords,
+    path: entry?.path ?? fallbackPath,
+    elevationM: entry?.elevation_m ?? null,
+  };
+}
 
 export const categories = ["Low", "Moderate", "High", "Very High", "Insufficient Data"] as const;
 export type RiskCategory = typeof categories[number];
@@ -107,6 +119,7 @@ export type HistoricalRoad = {
   locationCode: string;
   coordinates: [number, number];
   path: [number, number][];
+  elevationM?: number | null;
   routeType: "flood_prone" | "safer_corridor";
   triggerMm24h: number;
   historicalNote: string;
@@ -116,82 +129,78 @@ export type HistoricalRoad = {
 const localFloods = "https://baodanang.vn/nhieu-tuyen-duong-moi-mua-da-ngap-3281789.html";
 const drainage = "https://baodanang.vn/ba-du-an-thoat-nuoc-kip-thoi-giup-giam-ngap-trung-tam-do-thi-da-nang-3351930.html";
 export const historicalRoads: HistoricalRoad[] = [
-  // === HẢI CHÂU — Trục 1: Hàm Nghi → Nguyễn Văn Linh → Cầu Rồng (chuyển tiếp Đỏ → Cam → Vàng → Xanh) ===
+  // === HẢI CHÂU — Tọa độ bám sát 100% tim đường thật từ OpenStreetMap + cao độ Copernicus DEM ===
   { id: "ham-nghi-core", name: "Hàm Nghi (Tản Đà → Nguyễn Văn Linh)", corridorGroup: "Trục Hàm Nghi – Nguyễn Văn Linh",
     fromLabel: "Ngã tư Tản Đà", toLabel: "Nút giao Nguyễn Văn Linh",
     connectedNext: "Nối tiếp ra Nguyễn Văn Linh (ngập giảm dần) → Rẽ Trần Phú / Bạch Đằng để né ngập.",
-    locationCode: "hai-chau", coordinates: [16.0638, 108.2112],
-    path: [[16.0666, 108.2108], [16.0648, 108.2111], [16.0630, 108.2113], [16.0607, 108.2116]],
+    locationCode: "hai-chau", ...osmRoad("ham-nghi-core", [16.0644, 108.2105], [[16.0665, 108.2105], [16.0600, 108.2108]]),
     routeType: "flood_prone", triggerMm24h: 36,
     historicalNote: "Tâm trũng quanh hồ Thạc Gián, ngập sâu 0.3–0.5m ngày 05/11/2024.", source: drainage },
   { id: "nvl-mid", name: "Nguyễn Văn Linh (Hàm Nghi → Phan Châu Trinh)", corridorGroup: "Trục Hàm Nghi – Nguyễn Văn Linh",
     fromLabel: "Nút giao Hàm Nghi", toLabel: "Ngã tư Phan Châu Trinh",
     connectedNext: "Đoạn nối liền vùng trũng Hàm Nghi, nước giảm dần về hướng Cầu Rồng.",
-    locationCode: "hai-chau", coordinates: [16.0608, 108.2160],
-    path: [[16.0607, 108.2116], [16.0607, 108.2145], [16.0608, 108.2178], [16.0609, 108.2202]],
+    locationCode: "hai-chau", ...osmRoad("nvl-mid", [16.0606, 108.2157], [[16.0604, 108.2108], [16.0609, 108.2198]]),
     routeType: "flood_prone", triggerMm24h: 55,
     historicalNote: "Đoạn nối tiếp nút giao Hoàng Diệu – Hàm Nghi, ngập trung bình khi mưa vượt 55mm.", source: drainage },
   { id: "nvl-east", name: "Nguyễn Văn Linh (Phan Châu Trinh → Cầu Rồng)", corridorGroup: "Trục Hàm Nghi – Nguyễn Văn Linh",
     fromLabel: "Ngã tư Phan Châu Trinh", toLabel: "Đầu Cầu Rồng (Bạch Đằng)",
     connectedNext: "Thoát nước nhanh ra sông Hàn, nối trực tiếp với trục an toàn Trần Phú & Bạch Đằng.",
-    locationCode: "hai-chau", coordinates: [16.0610, 108.2224],
-    path: [[16.0609, 108.2202], [16.0610, 108.2225], [16.0611, 108.2244]],
+    locationCode: "hai-chau", ...osmRoad("nvl-east", [16.0610, 108.2224], [[16.0609, 108.2198], [16.0611, 108.2244]]),
     routeType: "flood_prone", triggerMm24h: 95,
     historicalNote: "Đoạn mép ngoài gần sông Hàn, chỉ ứ đọng nhẹ khi mưa rất lớn.", source: drainage },
 
-  // === HẢI CHÂU — Trục 2: Lê Duẩn → Bạch Đằng (chuyển tiếp Đỏ → Cam → Vàng → Xanh) ===
+  // === HẢI CHÂU — Trục 2: Lê Duẩn → Bạch Đằng ===
   { id: "le-duan-core", name: "Lê Duẩn (Hoàng Hoa Thám → Lý Thái Tổ)", corridorGroup: "Trục Lê Duẩn – Sông Hàn",
     fromLabel: "Ngã tư Hoàng Hoa Thám", toLabel: "Ngã tư Lý Thái Tổ",
-    connectedNext: "Nối tiếp đoạn Lý Thái Tổ → Nguyễn Chí Thanh (ngập thấp hơn), ưu tiên né qua Quang Trung/Trần Phú.",
-    locationCode: "hai-chau", coordinates: [16.0721, 108.2125],
-    path: [[16.0725, 108.2098], [16.0721, 108.2125], [16.0718, 108.2152]],
+    connectedNext: "Nối tiếp đoạn Lý Thái Tổ → Nguyễn Chí Thanh (ngập thấp hơn), ưu tiên né qua Trần Phú / Bạch Đằng.",
+    locationCode: "hai-chau", ...osmRoad("le-duan-core", [16.0700, 108.2125], [[16.0685, 108.2088], [16.0709, 108.2155]]),
     routeType: "flood_prone", triggerMm24h: 38,
     historicalNote: "Điểm trũng lịch sử trước BV Đà Nẵng, ngập 0.3–0.6m các đợt 14/10/2022 & 05/11/2024.", source: localFloods },
   { id: "le-duan-mid", name: "Lê Duẩn (Lý Thái Tổ → Nguyễn Chí Thanh)", corridorGroup: "Trục Lê Duẩn – Sông Hàn",
     fromLabel: "Ngã tư Lý Thái Tổ", toLabel: "Ngã tư Nguyễn Chí Thanh",
     connectedNext: "Nối liền đoạn đầu sông Hàn (ngập nhẹ), có thể rẽ phải vào Trần Phú để tránh.",
-    locationCode: "hai-chau", coordinates: [16.0715, 108.2178],
-    path: [[16.0718, 108.2152], [16.0715, 108.2178], [16.0713, 108.2202]],
+    locationCode: "hai-chau", ...osmRoad("le-duan-mid", [16.0711, 108.2186], [[16.0709, 108.2155], [16.0714, 108.2202]]),
     routeType: "flood_prone", triggerMm24h: 58,
     historicalNote: "Đoạn chuyển tiếp từ vùng trũng Lê Duẩn hướng ra sông Hàn, ngập nhẹ đến trung bình.", source: localFloods },
   { id: "le-duan-east", name: "Lê Duẩn (Nguyễn Chí Thanh → Bạch Đằng)", corridorGroup: "Trục Lê Duẩn – Sông Hàn",
     fromLabel: "Ngã tư Nguyễn Chí Thanh", toLabel: "Nút giao Bạch Đằng (Cầu Sông Hàn)",
     connectedNext: "Nối thẳng ra trục ven sông Bạch Đằng cao ráo, thoát nước nhanh.",
-    locationCode: "hai-chau", coordinates: [16.0711, 108.2224],
-    path: [[16.0713, 108.2202], [16.0711, 108.2224], [16.0710, 108.2245]],
+    locationCode: "hai-chau", ...osmRoad("le-duan-east", [16.0716, 108.2228], [[16.0714, 108.2202], [16.0718, 108.2243]]),
     routeType: "flood_prone", triggerMm24h: 95,
     historicalNote: "Gần cửa xả sông Hàn, hiếm khi ngập sâu trừ mưa lịch sử.", source: drainage },
 
-  // === HẢI CHÂU — Trục 3: Quang Trung – Hải Phòng ===
-  { id: "quang-trung-core", name: "Quang Trung – Hải Phòng (Ông Ích Khiêm → Nguyễn Chí Thanh)", corridorGroup: "Trục Quang Trung – Hải Phòng",
+  // === HẢI CHÂU — Trục 3: Quang Trung & Hải Phòng ===
+  { id: "quang-trung-core", name: "Quang Trung (Ông Ích Khiêm → Nguyễn Chí Thanh)", corridorGroup: "Trục Quang Trung – Hải Phòng",
     fromLabel: "Ngã tư Ông Ích Khiêm", toLabel: "Ngã tư Nguyễn Chí Thanh",
     connectedNext: "Nối tiếp đoạn Quang Trung → Bạch Đằng (ít ngập hơn).",
-    locationCode: "hai-chau", coordinates: [16.0752, 108.2165],
-    path: [[16.0750, 108.2130], [16.0752, 108.2165], [16.0754, 108.2198]],
+    locationCode: "hai-chau", ...osmRoad("quang-trung-core", [16.0739, 108.2158], [[16.0734, 108.2128], [16.0748, 108.2198]]),
     routeType: "flood_prone", triggerMm24h: 48,
     historicalNote: "Khu vực nội đô bê tông hóa >68%, thoát nước chậm khi mưa lớn kéo dài.", source: localFloods },
   { id: "quang-trung-east", name: "Quang Trung (Nguyễn Chí Thanh → Bạch Đằng)", corridorGroup: "Trục Quang Trung – Hải Phòng",
     fromLabel: "Ngã tư Nguyễn Chí Thanh", toLabel: "Ngã ba Bạch Đằng",
     connectedNext: "Nối trực tiếp ra tuyến tránh ngập Trần Phú và Bạch Đằng.",
-    locationCode: "hai-chau", coordinates: [16.0756, 108.2222],
-    path: [[16.0754, 108.2198], [16.0756, 108.2222], [16.0758, 108.2242]],
+    locationCode: "hai-chau", ...osmRoad("quang-trung-east", [16.0754, 108.2227], [[16.0748, 108.2198], [16.0756, 108.2243]]),
     routeType: "flood_prone", triggerMm24h: 90,
     historicalNote: "Đoạn gần bờ sông Hàn, mức ngập nhẹ hơn rõ rệt so với phía tây.", source: drainage },
+  { id: "hai-phong-core", name: "Hải Phòng (Ga Đà Nẵng → Nguyễn Chí Thanh)", corridorGroup: "Trục Quang Trung – Hải Phòng",
+    fromLabel: "Khu vực Ga Đà Nẵng", toLabel: "Ngã tư Nguyễn Chí Thanh",
+    connectedNext: "Có thể vòng lên phía đông Trần Phú / Bạch Đằng để tránh đoạn trũng BV Đà Nẵng.",
+    locationCode: "hai-chau", ...osmRoad("hai-phong-core", [16.0718, 108.2142], [[16.0695, 108.2085], [16.0725, 108.2208]]),
+    routeType: "flood_prone", triggerMm24h: 44,
+    historicalNote: "Tuyến trũng gần ga Đà Nẵng – BV Đà Nẵng, ngập cục bộ 0.3–0.5m khi mưa cường suất lớn.", source: localFloods },
 
   // === HẢI CHÂU — Trục 4: Núi Thành – Hòa Cường Nam ===
   { id: "nui-thanh-core", name: "Núi Thành (Tiểu La → Duy Tân)", corridorGroup: "Trục Núi Thành – Hòa Cường",
     fromLabel: "Ngã tư Tiểu La", toLabel: "Ngã tư Duy Tân",
     connectedNext: "Nối sang đoạn Duy Tân → Xô Viết Nghệ Tĩnh (ngập ít hơn), ưu tiên đi song song đường 2 Tháng 9.",
-    locationCode: "hai-chau", coordinates: [16.0455, 108.2204],
-    path: [[16.0485, 108.2208], [16.0455, 108.2204], [16.0425, 108.2200]],
+    locationCode: "hai-chau", ...osmRoad("nui-thanh-core", [16.0457, 108.2212], [[16.0495, 108.2210], [16.0415, 108.2212]]),
     routeType: "flood_prone", triggerMm24h: 40,
     historicalNote: "Trạm Hòa Cường Nam ghi nhận 281mm ngày 05/11/2024, ngập sâu đến 0.8–1.0m.",
     source: "https://dansinh.dantri.com.vn/dien-dan-dan-sinh/da-nang-mua-lon-nhieu-tuyen-duong-ngap-sau-hoc-sinh-nghi-hoc-20241105101609887.htm" },
   { id: "nui-thanh-south", name: "Núi Thành (Duy Tân → Xô Viết Nghệ Tĩnh)", corridorGroup: "Trục Núi Thành – Hòa Cường",
     fromLabel: "Ngã tư Duy Tân", toLabel: "Nút giao Xô Viết Nghệ Tĩnh",
     connectedNext: "Rẽ đông sang đường 2 Tháng 9 để di chuyển an toàn.",
-    locationCode: "hai-chau", coordinates: [16.0392, 108.2196],
-    path: [[16.0425, 108.2200], [16.0392, 108.2196], [16.0360, 108.2192]],
+    locationCode: "hai-chau", ...osmRoad("nui-thanh-south", [16.0382, 108.2213], [[16.0415, 108.2212], [16.0335, 108.2213]]),
     routeType: "flood_prone", triggerMm24h: 65,
     historicalNote: "Đoạn nối tiếp phía nam Hòa Cường, ngập nhẹ đến trung bình.", source: localFloods },
 
@@ -199,22 +208,19 @@ export const historicalRoads: HistoricalRoad[] = [
   { id: "hc-bach-dang", name: "Bạch Đằng (Quang Trung → Cầu Rồng)", corridorGroup: "Lộ trình né ngập Hải Châu",
     fromLabel: "Ngã ba Quang Trung", toLabel: "Đầu Cầu Rồng",
     connectedNext: "Kết nối thẳng sang đường 2 Tháng 9 đi về phía nam mà không qua điểm trũng.",
-    locationCode: "hai-chau", coordinates: [16.0685, 108.2247],
-    path: [[16.0758, 108.2242], [16.0710, 108.2245], [16.0660, 108.2248], [16.0611, 108.2244]],
+    locationCode: "hai-chau", ...osmRoad("hc-bach-dang", [16.0685, 108.2250], [[16.0775, 108.2242], [16.0608, 108.2244]]),
     routeType: "safer_corridor", triggerMm24h: 180,
     historicalNote: "Tuyến ven sông có cửa xả trực tiếp ra sông Hàn, ít ngập nhất khu vực trung tâm.", source: drainage },
   { id: "hc-tran-phu", name: "Trần Phú (Quang Trung → Cầu Rồng)", corridorGroup: "Lộ trình né ngập Hải Châu",
     fromLabel: "Ngã tư Quang Trung", toLabel: "Nút giao Nguyễn Văn Linh",
     connectedNext: "Tuyến song song Bạch Đằng giúp né toàn bộ điểm ngập Lê Duẩn – Hàm Nghi.",
-    locationCode: "hai-chau", coordinates: [16.0686, 108.2225],
-    path: [[16.0756, 108.2222], [16.0711, 108.2224], [16.0662, 108.2226], [16.0610, 108.2225]],
+    locationCode: "hai-chau", ...osmRoad("hc-tran-phu", [16.0700, 108.2241], [[16.0772, 108.2235], [16.0611, 108.2235]]),
     routeType: "safer_corridor", triggerMm24h: 155,
     historicalNote: "Trục trung tâm cốt nền cao hơn khu phía tây, thuận lợi di chuyển khi mưa lớn.", source: drainage },
   { id: "hc-2-thang-9", name: "Đường 2 Tháng 9 (Cầu Rồng → Công viên Châu Á)", corridorGroup: "Lộ trình né ngập Hải Châu",
     fromLabel: "Nút giao Cầu Rồng", toLabel: "Công viên Châu Á",
     connectedNext: "Tuyến thay thế trực tiếp cho trục Núi Thành – Tiểu La khi Hòa Cường Nam ngập.",
-    locationCode: "hai-chau", coordinates: [16.0480, 108.2244],
-    path: [[16.0595, 108.2242], [16.0525, 108.2243], [16.0455, 108.2245], [16.0365, 108.2246]],
+    locationCode: "hai-chau", ...osmRoad("hc-2-thang-9", [16.0491, 108.2223], [[16.0605, 108.2238], [16.0350, 108.2222]]),
     routeType: "safer_corridor", triggerMm24h: 170,
     historicalNote: "Trục rộng cốt nền cao, hệ thống cống lớn thoát nhanh ra sông Hàn.", source: drainage },
 
@@ -279,6 +285,46 @@ export const historicalRoads: HistoricalRoad[] = [
 export const indexHelp = "Experimental score from 0 to 100. It measures the index factors on their configured scale.";
 export const probabilityHelp = "Estimated chance of inundation within the 24-hour forecast window from an approved calibrated flood model.";
 
+export type FloodWindow = {
+  status: string;
+  onset_at: string | null;
+  peak_at: string | null;
+  recede_at: string | null;
+  duration_hours: number;
+  estimated_peak_depth_cm: number;
+  max_rain_1h_mm: number | null;
+  max_rain_3h_mm: number | null;
+  tide_level_m: number | null;
+  tide_impact: string;
+};
+
+export function scenarioFloodWindow(scenarioId: HistoricalScenarioId, rank: number): string | null {
+  if (scenarioId === "live" || rank < 2) return null;
+  const windows: Record<Exclude<HistoricalScenarioId, "live">, Record<number, string>> = {
+    "monsoon-2023": {
+      4: "05:30 → 09:30 ICT (4,0 giờ · Đỉnh 07:00)",
+      3: "06:00 → 08:30 ICT (2,5 giờ · Đỉnh 07:00)",
+      2: "06:30 → 08:00 ICT (1,5 giờ)",
+    },
+    "trami-2024": {
+      4: "11:00 → 16:30 ICT (5,5 giờ · Đỉnh 13:30)",
+      3: "12:00 → 15:30 ICT (3,5 giờ · Đỉnh 13:30)",
+      2: "12:30 → 14:30 ICT (2,0 giờ)",
+    },
+    "cloudburst-2024-11": {
+      4: "06:00 → 12:30 ICT (6,5 giờ · Đỉnh 08:30)",
+      3: "06:30 → 11:00 ICT (4,5 giờ · Đỉnh 08:30)",
+      2: "07:00 → 09:30 ICT (2,5 giờ)",
+    },
+    "son-ca-2022": {
+      4: "18:00 → 04:00+1 ICT (10,0 giờ · Đỉnh 22:00)",
+      3: "19:00 → 02:00+1 ICT (7,0 giờ · Đỉnh 22:00)",
+      2: "20:00 → 00:30+1 ICT (4,5 giờ)",
+    },
+  };
+  return windows[scenarioId][rank] ?? null;
+}
+
 type Numbers = Record<string, number | null>;
 export type Assessment = {
   id: number; location: string; issued_at: string; valid_until: string; created_at: string;
@@ -306,6 +352,8 @@ export type Assessment = {
     confidence_level?: string | null;
     depth_cm?: number | null;
     starts_at?: string | null;
+    flood_window?: FloodWindow | null;
+    hourly_rainfall_24h?: { valid_at: string; rain_mm: number }[] | null;
     data_provenance?: {
       types?: string[];
       has_verified_in_situ?: boolean;

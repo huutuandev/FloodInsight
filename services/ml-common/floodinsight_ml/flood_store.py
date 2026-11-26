@@ -154,11 +154,24 @@ def postgres_read(conn, start, end, as_of, *, include_inventory=True):
 
 def current_features(conn, issuance):
     points, inputs, _, _ = postgres_read(conn, issuance, issuance, issuance, include_inventory=False)
+    marine = [h for h in inputs[None]["hydrology"] if h.get("variable") == "sea_level_height_msl" and h.get("value") is not None]
+    latest_sea_level = float(marine[-1]["value"]) if marine else None
     for point in points:
         source = inputs[point["code"]]
         features = {name: source[name] for name in QUERIES}
         features["hydrology"] = source["hydrology"] + inputs[None]["hydrology"]
-        yield make_row(point, issuance, issuance, "operational", features, include_validity=True)
+        row = make_row(point, issuance, issuance, "operational", features, include_validity=True)
+        # Deduplicate hourly forecast by valid_at (latest received_at wins) for flood-window timing
+        by_valid = {}
+        for frow in source["forecast"]:
+            if frow.get("rain") is not None and frow.get("valid_at") is not None:
+                by_valid[frow["valid_at"]] = float(frow["rain"])
+        row["hourly_forecast"] = [
+            {"valid_at": valid_at, "rain_mm": round(rain_mm, 2)}
+            for valid_at, rain_mm in sorted(by_valid.items())
+        ]
+        row["sea_level_m"] = round(latest_sea_level, 3) if latest_sea_level is not None else None
+        yield row
 
 
 def resolve_issuance(value, now=None):

@@ -8,7 +8,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowDownUp, MapPin, RefreshCw } from "lucide-react";
 import { displayNumber, localTime, request, source, useCollection, useData, type Rain, type Scope, type Weather } from "./data";
 import {
-  activeAssessment, categories, floodZones, formatProbability, historicalRoads, historicalScenarios, indexHelp, label, mapEvidence, pointCategory, probabilityHelp, riskColors, riskRadius, roadScreening,
+  activeAssessment, categories, floodZones, formatProbability, historicalRoads, historicalScenarios, indexHelp, label, mapEvidence, pointCategory, probabilityHelp, riskColors, riskRadius, roadScreening, scenarioFloodWindow,
   type Assessment, type FloodPrediction, type HistoricalScenarioId, type MapHorizon, type PointRisk, type RiskCategory,
 } from "./flood-data";
 import type { Markers } from "./station-map";
@@ -197,6 +197,26 @@ function AssessmentEvidence({ row, assessment }: { row: PointRisk; assessment: A
     })}</div>
     <p className="metric-note">{t("Rainfall · preceding 24 h")}: <strong>{observed == null ? t("Unavailable") : `${displayNumber(observed)} mm`}</strong>
       {thresholdsKnown && observed != null && <> · {t("Difference from threshold")}: <strong>{displayNumber(observed - threshold)} mm</strong></>}</p>
+    {row.is_current && context?.flood_window && <div className="advice-box" style={{ borderLeftColor: context.flood_window.status === "flood_window_expected" ? "#dc2626" : "#16a34a" }}>
+      <h3>Khoảng thời gian ngập dự kiến (phân tích trượt theo giờ 24h tới)</h3>
+      {context.flood_window.status === "flood_window_expected" && context.flood_window.onset_at ? (
+        <div className="detail-chips">
+          <div className="detail-chip"><span>Bắt đầu ngập:</span><strong>{localTime(context.flood_window.onset_at)} ICT</strong></div>
+          {context.flood_window.peak_at && <div className="detail-chip"><span>Đỉnh ngập:</span><strong>{localTime(context.flood_window.peak_at)} ICT (~{context.flood_window.estimated_peak_depth_cm} cm)</strong></div>}
+          {context.flood_window.recede_at && <div className="detail-chip"><span>Dự kiến rút:</span><strong>{localTime(context.flood_window.recede_at)} ICT ({displayNumber(context.flood_window.duration_hours, 1)} giờ)</strong></div>}
+        </div>
+      ) : (
+        <p className="metric-note" style={{ margin: "0 0 .4rem" }}>Chưa phát hiện khung giờ vượt ngưỡng ngập trong 24 giờ tới.</p>
+      )}
+      <div className="detail-chips">
+        <div className="detail-chip"><span>Mưa cực đại 1 giờ:</span><strong>{displayNumber(context.flood_window.max_rain_1h_mm)} mm</strong></div>
+        <div className="detail-chip"><span>Mưa trượt 3 giờ:</span><strong>{displayNumber(context.flood_window.max_rain_3h_mm)} mm</strong></div>
+        {context.flood_window.tide_level_m != null && <div className="detail-chip">
+          <span>Mực triều ven biển:</span>
+          <strong>{displayNumber(context.flood_window.tide_level_m, 2)} m ({context.flood_window.tide_impact === "high_tide_slows_drainage" ? "Triều cao, rút chậm" : "Thoát nước bình thường"})</strong>
+        </div>}
+      </div>
+    </div>}
     {row.is_current && typeof context?.depth_cm === "number" && <p>{t("Estimated depth")} {displayNumber(context.depth_cm)} cm</p>}
     {row.is_current && typeof context?.starts_at === "string" && <p>{t("Estimated onset")} {localTime(context.starts_at)} ICT</p>}
     <div className="advice-box" style={{ borderLeftColor: riskColors[category] }}>
@@ -329,11 +349,29 @@ export function FloodMap({ selected, select }: { selected: string; select: (code
         const floodRiskRoads = visibleRoads.filter(r => r.routeType === "flood_prone" && r.screening.rank >= 2);
         const saferAndLowRoads = visibleRoads.filter(r => r.routeType === "safer_corridor" || r.screening.rank <= 1);
 
+        const formatFloodWindow = (locationCode: string, rank: number) => {
+          if (scenarioId !== "live") {
+            return scenarioFloodWindow(scenarioId, rank) ?? "Không ngập trong đợt mưa này (cao ráo / thoát nước tốt)";
+          }
+          const assessment = activeAssessment(assessments.get(locationCode));
+          const fw = assessment?.inundation_detail?.flood_window;
+          if (fw?.status === "flood_window_expected" && fw.onset_at && fw.recede_at) {
+            const peakText = fw.peak_at ? ` · Đỉnh ${localTime(fw.peak_at)} (~${fw.estimated_peak_depth_cm} cm)` : "";
+            return `${localTime(fw.onset_at)} → ${localTime(fw.recede_at)} ICT (${displayNumber(fw.duration_hours, 1)} giờ${peakText})`;
+          }
+          if (assessment) {
+            const max1h = fw?.max_rain_1h_mm != null ? ` · Mưa đỉnh 1h: ${displayNumber(fw.max_rain_1h_mm)} mm` : "";
+            return `Chưa có khung giờ ngập trong 24h tới (đến ${localTime(assessment.valid_until)} ICT${max1h})`;
+          }
+          return "Chưa có khung giờ ngập trong 24h tới";
+        };
+
         const mapZones = showZones ? floodZones.map(zone => {
           const rain = getRain(zone.locationCode);
           const screening = roadScreening(rain, zone.triggerMm24h, activeHorizon);
           const coreColor = screening.rank >= 4 ? "#dc2626" : screening.rank === 3 ? "#f97316" : screening.rank === 2 ? "#eab308" : "#22c55e";
           const outerColor = screening.rank >= 4 ? "#f97316" : screening.rank === 3 ? "#eab308" : "#22c55e";
+          const zoneWindow = formatFloodWindow(zone.locationCode, screening.rank);
           return {
             ...zone,
             coreColor,
@@ -342,11 +380,13 @@ export function FloodMap({ selected, select }: { selected: string; select: (code
             content: <>
               <strong className="popup-name">{zone.name}</strong>
               <div style={{ fontWeight: 700, color: coreColor }}>{screening.label} ({screening.depth})</div>
+              <div><strong>Khoảng thời gian ngập:</strong> <span style={{ color: coreColor, fontWeight: 700 }}>{zoneWindow}</span></div>
               <div>Lượng mưa tham chiếu: <strong>{displayNumber(rain)} mm</strong> · Ngưỡng: {zone.triggerMm24h} mm</div>
               <p style={{ margin: "6px 0 0" }}>{zone.elevationNote}</p>
             </>,
           };
         }) : undefined;
+        const selectedRoadObj = roads.find(r => r.id === focusedRoad);
 
         return <>
         <div className="scenario-bar" role="group" aria-label="Chế độ xem dự báo hoặc đối chiếu lịch sử">
@@ -381,40 +421,64 @@ export function FloodMap({ selected, select }: { selected: string; select: (code
           <button className="button primary" type="button" onClick={() => setExpanded(v => !v)}>{expanded ? "Thu gọn bản đồ" : "Mở rộng toàn bản đồ"}</button>
         </div>
         <StationMap points={mappedPoints} selected={selected} focused={focused} onSelect={focus} latest={{}} weather={[]}
-          showAreas={false} zones={mapZones} focusedRoad={focusedRoad} expanded={expanded} fitNonce={fitNonce}
-          roads={mapRoads.map(road => ({
-            ...road,
-            color: road.screening.color,
-            dashed: road.routeType === "safer_corridor" && road.screening.rank === 1,
-            content: <>
-              <strong className="popup-name">{road.name}</strong>
-              <div style={{ fontWeight: 700, color: road.screening.color, marginBottom: 4 }}>
-                {road.screening.label} · Ước tính: {road.screening.depth}
-              </div>
-              <div><strong>Đoạn đường:</strong> {road.fromLabel} → {road.toLabel}</div>
-              <div><strong>Lượng mưa tham chiếu:</strong> {displayNumber(road.rain)} mm (ngưỡng đoạn: {road.triggerMm24h} mm/24h)</div>
-              <div style={{ marginTop: 4 }}><strong>Đoạn nối tiếp / Gợi ý né:</strong> {road.connectedNext}</div>
-              <p style={{ margin: "6px 0 4px" }}>{road.historicalNote}</p>
-              <a href={road.source} target="_blank" rel="noreferrer">Nguồn kiểm chứng lịch sử</a>
-            </>,
-          }))}
+          showAreas={false} zones={mapZones} focusedRoad={focusedRoad} onSelectRoad={setFocusedRoad} expanded={expanded} fitNonce={fitNonce}
+          roads={mapRoads.map(road => {
+            const windowText = formatFloodWindow(road.locationCode, road.screening.rank);
+            return {
+              ...road,
+              color: road.screening.color,
+              dashed: road.routeType === "safer_corridor" && road.screening.rank === 1,
+              content: <>
+                <strong className="popup-name">{road.name}</strong>
+                <div style={{ fontWeight: 700, color: road.screening.color, marginBottom: 4 }}>
+                  {road.screening.label} · Ước tính: {road.screening.depth}
+                </div>
+                <div><strong>Khoảng thời gian ngập:</strong> <span style={{ color: road.screening.rank >= 2 ? road.screening.color : "inherit", fontWeight: 700 }}>{windowText}</span></div>
+                <div><strong>Đoạn đường:</strong> {road.fromLabel} → {road.toLabel}</div>
+                {road.elevationM != null && <div><strong>Cao độ địa hình (DEM):</strong> {road.elevationM} m</div>}
+                <div><strong>Lượng mưa tham chiếu:</strong> {displayNumber(road.rain)} mm (ngưỡng đoạn: {road.triggerMm24h} mm/24h)</div>
+                <div style={{ marginTop: 4 }}><strong>Đoạn nối tiếp / Gợi ý né:</strong> {road.connectedNext}</div>
+                <p style={{ margin: "6px 0 4px" }}>{road.historicalNote}</p>
+                <a href={road.source} target="_blank" rel="noreferrer">Nguồn kiểm chứng lịch sử</a>
+              </>,
+            };
+          })}
           floodMarkers={Object.fromEntries(rows.map((row) => {
             const liveEv = mapEvidence(row, horizon);
             const rain = getRain(row.point.code);
             const category: RiskCategory = scenarioId === "live"
               ? liveEv.category
               : (rain ?? 0) >= 150 ? "Very High" : (rain ?? 0) >= 90 ? "High" : (rain ?? 0) >= 45 ? "Moderate" : "Low";
+            const stationRank = category === "Very High" ? 4 : category === "High" ? 3 : category === "Moderate" ? 2 : 1;
+            const stationWindow = formatFloodWindow(row.point.code, stationRank);
             const current = activeAssessment(row);
             return [row.point.code, { color: riskColors[category], radius: riskRadius[category], content: <>
               <strong className="popup-name">{row.point.name}</strong><div><RiskBadge category={category} /></div>
+              <div><strong>Khoảng thời gian ngập:</strong> {stationWindow}</div>
               <div>Lượng mưa tham chiếu: <strong>{displayNumber(rain)} mm</strong></div>
               {scenarioId === "live" && horizon === "summary" && current?.risk_index != null && <div>Chỉ số rủi ro: <strong>{displayNumber(current.risk_index)} / 100</strong></div>}
+              {scenarioId === "live" && current?.inundation_detail?.flood_window?.tide_level_m != null && (
+                <div>Mực triều ven biển: <strong>{displayNumber(current.inundation_detail.flood_window.tide_level_m, 2)} m</strong></div>
+              )}
               {scenarioId === "live" && row.assessment && <>
                 <div>Phát hành: {localTime(row.assessment.issued_at)} ICT</div>
                 <div>Hiệu lực đến: {localTime(row.assessment.valid_until)} ICT</div>
               </>}
             </> }];
           }))} />
+        {selectedRoadObj && <div className="advice-box" style={{ borderLeftColor: selectedRoadObj.screening.color, marginTop: ".8rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: ".5rem", flexWrap: "wrap" }}>
+            <h3 style={{ margin: 0 }}>Chi tiết tuyến đường đang chọn: {selectedRoadObj.name}</h3>
+            <button type="button" className="button secondary" style={{ padding: ".25rem .6rem", fontSize: ".78rem" }} onClick={() => setFocusedRoad("")}>Đóng chi tiết</button>
+          </div>
+          <div className="detail-chips" style={{ marginTop: ".5rem" }}>
+            <div className="detail-chip"><span>Trạng thái:</span><strong style={{ color: selectedRoadObj.screening.color }}>{selectedRoadObj.screening.label} ({selectedRoadObj.screening.depth})</strong></div>
+            <div className="detail-chip"><span>Khoảng thời gian ngập:</span><strong style={{ color: selectedRoadObj.screening.rank >= 2 ? selectedRoadObj.screening.color : "inherit" }}>{formatFloodWindow(selectedRoadObj.locationCode, selectedRoadObj.screening.rank)}</strong></div>
+            <div className="detail-chip"><span>Phạm vi đoạn:</span><strong>{selectedRoadObj.fromLabel} → {selectedRoadObj.toLabel}</strong></div>
+            {selectedRoadObj.elevationM != null && <div className="detail-chip"><span>Cao độ DEM:</span><strong>{selectedRoadObj.elevationM} m</strong></div>}
+          </div>
+          <p className="metric-note" style={{ margin: ".35rem 0 0" }}><strong>Gợi ý di chuyển / đoạn nối tiếp:</strong> {selectedRoadObj.connectedNext}</p>
+        </div>}
         <div className="corridor-legend" aria-label="Chú giải thang màu mức ngập theo đoạn đường">
           <span className="corridor-legend-item"><i style={{ backgroundColor: "#dc2626" }} />Ngập sâu (30–50+ cm) · Tránh đi qua</span>
           <span className="corridor-legend-item"><i style={{ backgroundColor: "#f97316" }} />Ngập trung bình (15–30 cm) · Hạn chế</span>
@@ -424,11 +488,16 @@ export function FloodMap({ selected, select }: { selected: string; select: (code
         <div className="road-groups">
           <div className="road-group-card">
             <h4><i className="road-dot" style={{ backgroundColor: "#dc2626" }} />Các đoạn đường có nguy cơ ngập ({floodRiskRoads.length})</h4>
-            <div className="flood-stations">{floodRiskRoads.length ? floodRiskRoads.map(road => <button type="button" className="button secondary" key={road.id}
-              aria-pressed={focusedRoad === road.id} onClick={() => { setFocused(road.locationCode); setFocusedRoad(road.id); }}>
-              <MapPin size={15} style={{ color: road.screening.color, flexShrink: 0 }} />
-              <span>{road.name}<small style={{ color: road.screening.color }}>{road.screening.label} ({road.screening.depth})</small></span>
-            </button>) : <p className="chart-note">Với lượng mưa dự báo hiện tại, chưa có đoạn đường nào vượt ngưỡng ngập. Hãy chọn một sự kiện lịch sử phía trên để xem bản đồ chuyển màu khi mưa lớn.</p>}</div>
+            <div className="flood-stations">{floodRiskRoads.length ? floodRiskRoads.map(road => {
+              const win = scenarioFloodWindow(scenarioId, road.screening.rank);
+              return <button type="button" className="button secondary" key={road.id}
+                aria-pressed={focusedRoad === road.id} onClick={() => { setFocused(road.locationCode); setFocusedRoad(road.id); }}>
+                <MapPin size={15} style={{ color: road.screening.color, flexShrink: 0 }} />
+                <span>{road.name}
+                  <small style={{ color: road.screening.color }}>{road.screening.label} ({road.screening.depth}){win ? ` · ${win}` : ""}</small>
+                </span>
+              </button>;
+            }) : <p className="chart-note">Với lượng mưa dự báo hiện tại, chưa có đoạn đường nào vượt ngưỡng ngập. Hãy chọn một sự kiện lịch sử phía trên để xem bản đồ chuyển màu & khung giờ ngập khi mưa lớn.</p>}</div>
           </div>
           <div className="road-group-card">
             <h4><i className="road-dot" style={{ backgroundColor: "#16a34a" }} />Tuyến cao ráo / Gợi ý né ngập ({saferAndLowRoads.length})</h4>

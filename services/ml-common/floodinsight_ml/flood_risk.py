@@ -1,5 +1,6 @@
 """Experimental multicriteria flood risk index with explicit abstention."""
 
+from datetime import timedelta
 from hashlib import sha256
 import json
 import math
@@ -154,6 +155,66 @@ def normalize(value, feature, config, scale=1):
     return 1 - norm if feature == "elevation_m" else norm
 
 
+def compute_flood_window(hourly_forecast, trigger_24h_mm, sea_level_m=None):
+    """Estimate flood onset, peak, recession time and duration from hourly NWP rainfall + Han River tide."""
+    if not hourly_forecast or trigger_24h_mm is None or trigger_24h_mm <= 0:
+        return {
+            "status": "no_hourly_forecast",
+            "onset_at": None, "peak_at": None, "recede_at": None,
+            "duration_hours": 0.0, "estimated_peak_depth_cm": 0,
+            "max_rain_1h_mm": None, "max_rain_3h_mm": None,
+            "tide_level_m": sea_level_m, "tide_impact": "unknown",
+        }
+    drain_rate = max(4.0, float(trigger_24h_mm) / 6.0)
+    tide_slow = sea_level_m is not None and sea_level_m > 0.6
+    if tide_slow:
+        drain_rate *= max(0.75, 1.0 - (float(sea_level_m) - 0.6) * 0.25)
+    onset_acc_mm = max(12.0, float(trigger_24h_mm) * 0.30)
+    rains = [float(item["rain_mm"]) for item in hourly_forecast]
+    max_1h = round(max(rains), 2)
+    max_3h = round(max(sum(rains[max(0, i - 2):i + 1]) for i in range(len(rains))), 2)
+
+    # Extend 6 hours after the forecast window to track drainage recession
+    timeline = list(hourly_forecast)
+    last_time = timeline[-1]["valid_at"]
+    for extra in range(1, 7):
+        timeline.append({"valid_at": last_time + timedelta(hours=extra), "rain_mm": 0.0})
+
+    acc = 0.0
+    onset_at = None
+    recede_at = None
+    peak_at = None
+    peak_acc = 0.0
+    for idx, step in enumerate(timeline):
+        r = float(step["rain_mm"])
+        acc = max(0.0, acc + r - drain_rate)
+        rolling_3h = sum(float(timeline[j]["rain_mm"]) for j in range(max(0, idx - 2), idx + 1))
+        if acc > peak_acc:
+            peak_acc = acc
+            peak_at = step["valid_at"]
+        if onset_at is None and (acc >= onset_acc_mm or rolling_3h >= float(trigger_24h_mm) * 0.65):
+            onset_at = step["valid_at"]
+        elif onset_at is not None and recede_at is None and acc < onset_acc_mm * 0.45 and r < drain_rate * 0.6:
+            recede_at = step["valid_at"]
+
+    if onset_at is not None and recede_at is None:
+        recede_at = timeline[-1]["valid_at"]
+    duration = round((recede_at - onset_at).total_seconds() / 3600.0, 1) if (onset_at and recede_at) else 0.0
+    depth_cm = int(round(min(120.0, peak_acc * 0.85))) if onset_at is not None else 0
+    return {
+        "status": "flood_window_expected" if onset_at is not None else "no_flood_window_expected",
+        "onset_at": onset_at,
+        "peak_at": peak_at if onset_at is not None else None,
+        "recede_at": recede_at,
+        "duration_hours": duration,
+        "estimated_peak_depth_cm": depth_cm,
+        "max_rain_1h_mm": max_1h,
+        "max_rain_3h_mm": max_3h,
+        "tide_level_m": sea_level_m,
+        "tide_impact": "high_tide_slows_drainage" if tide_slow else "normal_drainage",
+    }
+
+
 def assess(row, config):
     if row["mode"] != "operational":
         raise ValueError("Risk assessment requires recorded-receipt operational features")
@@ -218,6 +279,9 @@ def assess(row, config):
     f24 = forecast.get("forecast_rain_next_24h_mm")
     p24 = observed.get("rain_prev_24h_mm")
     effective_rain = max(v for v in (f24, p24) if v is not None) if (f24 is not None or p24 is not None) else None
+    hourly_forecast = row.get("hourly_forecast") or []
+    sea_level_m = row.get("sea_level_m")
+    district_window = compute_flood_window(hourly_forecast, thresholds["24h_mm"], sea_level_m)
     vulnerable_corridors = []
     for corridor in VULNERABLE_CORRIDORS.get(row["location"], ()):
         trig = corridor["trigger_mm_24h"]
@@ -230,6 +294,7 @@ def assess(row, config):
             "effective_rain_24h_mm": round(float(effective_rain), 2) if effective_rain is not None else None,
             "threshold_ratio": c_ratio,
             "status": c_status,
+            "flood_window": compute_flood_window(hourly_forecast, trig, sea_level_m),
         })
     inundation_detail = {
         "primary_driver": primary_driver,
@@ -237,6 +302,8 @@ def assess(row, config):
         "forecast_vs_threshold_24h_ratio": round(f24 / thresholds["24h_mm"], 3) if f24 is not None else None,
         "confidence_level": "high" if (numeric and coverage >= 0.95 and len(included) == len(FACTORS))
                             else ("medium" if numeric else "low"),
+        "flood_window": district_window,
+        "hourly_rainfall_24h": hourly_forecast[:24],
         "vulnerable_corridors": vulnerable_corridors,
         "data_provenance": {
             "types": prov_types,
