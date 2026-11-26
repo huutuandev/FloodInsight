@@ -7,7 +7,9 @@ import math
 from .flood_sources import POINTS, number
 
 DEM_TILE = "Copernicus_DSM_COG_10_N16_00_E108_00_DEM"
-DEM = f"https://copernicus-dem-30m.s3.amazonaws.com/{DEM_TILE}/{DEM_TILE}.tif"
+DEM_SOUTH_TILE = "Copernicus_DSM_COG_10_N15_00_E108_00_DEM"
+DEM_BUCKET = "https://copernicus-dem-30m.s3.amazonaws.com"
+DEM = f"{DEM_BUCKET}/{DEM_TILE}/{DEM_TILE}.tif"
 WORLDCOVER = ("https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map/"
               "ESA_WorldCover_10m_2021_v200_N15E108_Map.tif")
 LAND_CLASSES = {10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100}
@@ -63,10 +65,11 @@ def sample_raster(path, dataset, points=POINTS):
                                       value=float((values == 50).mean()), unit="fraction")
 
 
-def raster_batch(dataset, path):
+def raster_batch(dataset, path, *, south_tile=False):
     if dataset == "copernicus-dem":
         code, provider, title, url, licence, attribution, metadata = (
-            "copernicus-dem-glo30", "Copernicus", "Copernicus DEM GLO-30", DEM,
+            "copernicus-dem-glo30", "Copernicus", "Copernicus DEM GLO-30",
+            f"{DEM_BUCKET}/{DEM_SOUTH_TILE}/{DEM_SOUTH_TILE}.tif" if south_tile else DEM,
             "Copernicus DEM GLO-30 Full, Free & Open",
             "Copernicus DEM © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018",
             {"resolution_m": 30, "method": "point cell and 3x3 Horn slope", "vertical_datum": "EGM2008"},
@@ -77,12 +80,13 @@ def raster_batch(dataset, path):
             "CC BY 4.0", "© ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021)",
             {"resolution_m": 10, "year": 2021, "method": "point class and 11x11 built-up cell fraction"},
         )
+    points = tuple(point for point in POINTS if (point.latitude < 16) == south_tile) if dataset == "copernicus-dem" else POINTS
     with path.open("rb") as stream:
         checksum = sha256()
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             checksum.update(chunk)
     return dict(code=code, provider=provider, dataset=title, source_ref=url, sha256=checksum.hexdigest(),
                 retrieved_at=datetime.now(timezone.utc), licence=licence, attribution=attribution,
-                metadata=metadata | {"expected_samples": len(POINTS) * 2, "method_version": 1,
+                metadata=metadata | {"expected_samples": len(points) * 2, "method_version": 1,
                                      "asset_validation": "local tile supplied by operator"},
-                kind="terrain", rows=list(sample_raster(path, dataset)))
+                kind="terrain", rows=list(sample_raster(path, dataset, points)))

@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     max_attempts: int = Field(default=3, ge=1, le=5)
     # Include both the provider's current hour and the endpoint of the next
     # 24-hour decision window after the current receipt becomes eligible.
+    past_hours: int = Field(default=72, ge=0, le=72)
+    prediction_url: AnyHttpUrl | None = None
+    warehouse_url: AnyHttpUrl | None = None
+    soil_interval_seconds: int = Field(default=3600, ge=300)
     forecast_hours: int = Field(default=26, ge=1, le=48)
 
 

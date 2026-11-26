@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -26,9 +27,16 @@ async def lifespan(app: FastAPI):
                 "interval",
                 seconds=settings.interval_seconds,
                 id=JOB_ID,
+                next_run_time=datetime.now(timezone.utc) + timedelta(seconds=min(settings.interval_seconds, 10)),
                 max_instances=1,
                 coalesce=True,
             )
+            if settings.warehouse_url is not None:
+                scheduler.add_job(
+                    ingestion.refresh_delayed_soil, "interval", seconds=settings.soil_interval_seconds,
+                    id="era5-soil-refresh", max_instances=1, coalesce=True,
+                    next_run_time=datetime.now(timezone.utc),
+                )
             scheduler.start()
         try:
             yield
