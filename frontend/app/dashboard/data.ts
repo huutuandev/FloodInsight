@@ -34,11 +34,24 @@ export type ProviderForecast = {
 };
 export type Evaluation = {
   version: string;
-  scope?: { availability?: string };
+  scope?: { availability?: string; start_date?: string; end_date?: string };
+  splits?: {
+    train?: { samples: number; first_target: string; last_target: string };
+    validation?: { samples: number; first_target: string; last_target: string };
+    test?: { samples: number; first_target: string; last_target: string };
+  };
   metrics: {
     samples?: number; silhouette_score?: number;
-    test?: {
+    validation?: {
+      xgboost?: { mae_mm: number; rmse_mm: number };
       random_forest?: { mae_mm: number; rmse_mm: number };
+      lag_1_persistence?: { mae_mm: number; rmse_mm: number };
+      lag_8_persistence?: { mae_mm: number; rmse_mm: number };
+    };
+    test?: {
+      xgboost?: { mae_mm: number; rmse_mm: number };
+      random_forest?: { mae_mm: number; rmse_mm: number };
+      lag_1_persistence?: { mae_mm: number; rmse_mm: number };
       lag_8_persistence?: { mae_mm: number; rmse_mm: number };
       f1_macro?: number; precision_macro?: number; recall_macro?: number;
       confusion_matrix?: number[][];

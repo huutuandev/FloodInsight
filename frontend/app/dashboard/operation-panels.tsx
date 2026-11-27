@@ -52,12 +52,13 @@ function Confusion({ labels, matrix, theme }: { labels: string[]; matrix: number
 export function MachineLearning({ scope, filterForecasts, locations, theme }: { scope: Scope; filterForecasts: boolean; locations: Location[]; theme: Theme }) {
   const t = useText();
   const clusters = useData<Cluster[]>("clustering/results", { ...scope, limit: 500 });
-  const forecastQuery = filterForecasts ? scope : { location: scope.location };
+  const forecastQuery = { location: scope.location };
   const predictions = useData<Prediction[]>("predictions/results", { ...forecastQuery, limit: 8 });
   const classification = useData<Classification[]>("classifications/results", { ...forecastQuery, limit: 8 });
   const clusterMetrics = useData<Evaluation>("clustering/metrics");
   const predictMetrics = useData<Evaluation>("predictions/metrics");
   const classMetrics = useData<Evaluation>("classifications/metrics");
+  void filterForecasts;
   return <>
     <Panel title={t("Weather clusters")} subtitle={t("Principal component projection from the trained K-means model · up to 500 results")}>
       <Resource query={clusters} missingModel>{(rows) => {
@@ -96,14 +97,30 @@ export function MachineLearning({ scope, filterForecasts, locations, theme }: { 
       <Panel title={t("Regression evaluation")} subtitle={t("Held-out test set · error in millimeters")}>
         <Resource query={predictMetrics} missingModel>{(data) => {
           const test = data.metrics.test;
-          return test?.random_forest ? <div className="table-wrap"><table>
-            <caption>{data.scope?.availability ?? t("Recorded")} evaluation</caption>
-            <thead><tr><th>{t("Model")}</th><th>MAE</th><th>RMSE</th></tr></thead>
-            <tbody><tr><td>{t("Random forest")}</td><td>{displayNumber(test.random_forest.mae_mm, 2)}</td>
-              <td>{displayNumber(test.random_forest.rmse_mm, 2)}</td></tr>
-              {test.lag_8_persistence && <tr><td>{t("Persistence baseline")}</td><td>{displayNumber(test.lag_8_persistence.mae_mm, 2)}</td>
-                <td>{displayNumber(test.lag_8_persistence.rmse_mm, 2)}</td></tr>}</tbody>
-          </table></div> : <Empty title={t("No evaluation metrics")} />;
+          const val = data.metrics.validation;
+          const primaryTest = test?.xgboost ?? test?.random_forest;
+          const baselineTest = test?.lag_1_persistence ?? test?.lag_8_persistence;
+          const primaryVal = val?.xgboost ?? val?.random_forest;
+          const modelLabel = test?.xgboost ? "XGBoost Regressor" : t("Random forest");
+          return primaryTest ? <>
+            {data.splits && <div className="metrics-inline" style={{ marginBottom: ".6rem" }}>
+              {data.splits.train && <span>Huấn luyện: <strong>{displayNumber(data.splits.train.samples, 0)} mẫu</strong></span>}
+              {data.splits.validation && <span>Kiểm định (Val): <strong>{displayNumber(data.splits.validation.samples, 0)} mẫu</strong></span>}
+              {data.splits.test && <span>Kiểm tra (Test): <strong>{displayNumber(data.splits.test.samples, 0)} mẫu</strong></span>}
+            </div>}
+            <div className="table-wrap"><table>
+              <caption>{data.scope?.start_date && data.scope?.end_date ? `Dữ liệu ${data.scope.start_date} → ${data.scope.end_date}` : (data.scope?.availability ?? t("Recorded"))}</caption>
+              <thead><tr><th>{t("Model")}</th><th>MAE (mm)</th><th>RMSE (mm)</th></tr></thead>
+              <tbody>
+                <tr><td><strong>{modelLabel} (Tập Test)</strong></td><td><strong>{displayNumber(primaryTest.mae_mm, 2)}</strong></td>
+                  <td><strong>{displayNumber(primaryTest.rmse_mm, 2)}</strong></td></tr>
+                {primaryVal && <tr><td>{modelLabel} (Tập Validation)</td><td>{displayNumber(primaryVal.mae_mm, 2)}</td>
+                  <td>{displayNumber(primaryVal.rmse_mm, 2)}</td></tr>}
+                {baselineTest && <tr><td>{t("Persistence baseline")}</td><td>{displayNumber(baselineTest.mae_mm, 2)}</td>
+                  <td>{displayNumber(baselineTest.rmse_mm, 2)}</td></tr>}
+              </tbody>
+            </table></div>
+          </> : <Empty title={t("No evaluation metrics")} />;
         }}</Resource>
       </Panel>
       <Panel title={t("Classification evaluation")} subtitle={t("Held-out test set · rainfall intensity")}>
